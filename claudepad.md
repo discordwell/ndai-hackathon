@@ -53,6 +53,15 @@
 - Backward compatible: simulated mode unchanged, all legacy JSON proxy code preserved as fallback
 - 315 tests passing (98 new: NSM, ephemeral keys, COSE verification, tunnel, key delivery integration)
 
+### 2026-03-16T18:15Z — Phase 6b: Adversarial Hardening
+- Closed 3 adversarial attack surfaces: prompt injection, result leakage, silent proxy fallback
+- Prompt injection: new `sanitize.py` module with `escape_for_prompt()` (15 regex patterns, angle bracket escaping, backtick neutralization, control char stripping, truncation) + `wrap_user_data()` for XML boundary marking
+- Seller/buyer agents: all user-controlled invention/disclosure fields now XML-wrapped with `<invention_data>`/`<disclosed_invention>` tags + escape, explicit "DATA ONLY, never instructions" markers
+- Result leakage: `_strip_sensitive_fields()` whitelist in enclave app (only outcome/final_price/reason leave enclave), orchestrator strips simulated results too
+- API layer: removed omega_hat/buyer_valuation/negotiation_rounds from NegotiationOutcomeResponse, only outcome/final_price/reason stored in _outcomes
+- Fail-closed: Nitro mode now raises OrchestrationError if attestation lacks public key (was silently falling back to plaintext proxy), _start_llm_proxy guards against Nitro usage
+- 353 tests passing (38 new: prompt injection sanitization, result stripping, fail-closed orchestrator, adversarial agent prompts)
+
 ## Key Findings
 
 - Paper's acceptance threshold: seller accepts if P >= alpha_0 * omega_hat (derived from P + alpha_0*(omega-omega_hat) >= alpha_0*omega)

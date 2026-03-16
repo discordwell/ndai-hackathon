@@ -47,6 +47,7 @@ Both agents' decisions affect the final price. The seller controls `ω̂` (discl
 | Negotiation Engine | `ndai/enclave/negotiation/engine.py` | Nash bargaining math, Φ, θ, P*, constraint checks |
 | Seller Agent | `ndai/enclave/agents/seller_agent.py` | Claude tool-use for disclosure and offer evaluation |
 | Buyer Agent | `ndai/enclave/agents/buyer_agent.py` | Claude tool-use for invention evaluation and pricing |
+| Prompt Sanitizer | `ndai/enclave/agents/sanitize.py` | Injection-safe escaping + XML boundary wrapping for user data in prompts |
 | Session Orchestrator | `ndai/enclave/session.py` | Wires agents + engine into complete negotiation lifecycle |
 | Shamir SSS | `ndai/crypto/shamir.py` | (k,n)-threshold secret sharing over GF(p), 256-bit prime |
 | TEE Provider | `ndai/tee/provider.py` | Abstract TEE interface (Nitro + Simulated backends) |
@@ -88,13 +89,16 @@ Seller submits invention (encrypted client-side)
 
 ### Security Vectors Closed
 
-| Vector | Before (Phase 5) | After (Phase 6) |
-|--------|-------------------|------------------|
+| Vector | Before (Phase 5) | After (Phase 6/6b) |
+|--------|-------------------|---------------------|
 | Parent reads LLM traffic | All plaintext via JSON proxy | TLS ciphertext only (TCP tunnel) |
 | Parent steals API key | Key in parent memory | ECIES-encrypted to enclave pubkey |
 | Forged attestation | No signature check | COSE Sign1 verified to AWS root CA |
 | Replay attestation | No freshness | Nonce + timestamp check |
 | Modified enclave code | PCR check but no crypto sig | PCRs inside cryptographically signed attestation |
+| Prompt injection via invention fields | 7-pattern uppercase blocklist | 15 case-insensitive regex patterns + XML boundary wrapping + angle bracket escaping |
+| Result leakage to parent | omega_hat, payoffs, buyer_valuation sent in plaintext | Whitelist: only outcome/final_price/reason leave enclave |
+| Silent proxy fallback | Attestation without pubkey silently fell back to plaintext proxy | Fail-closed: raises OrchestrationError, proxy blocked in Nitro mode |
 
 ## Tech Stack
 

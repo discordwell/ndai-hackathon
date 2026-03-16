@@ -197,7 +197,18 @@ class EnclaveOrchestrator:
                 result.outcome.value,
                 elapsed,
             )
-            return result
+            # Strip sensitive fields — parent should not see internals
+            return NegotiationResult(
+                outcome=result.outcome,
+                final_price=result.final_price,
+                omega_hat=0.0,
+                theta=0.0,
+                phi=0.0,
+                seller_payoff=None,
+                buyer_payoff=None,
+                buyer_valuation=None,
+                reason=result.reason,
+            )
 
         except TimeoutError:
             elapsed = time.monotonic() - start_time
@@ -307,12 +318,9 @@ class EnclaveOrchestrator:
                     attestation.enclave_public_key,
                 )
             elif nitro_api_key:
-                logger.warning(
-                    "Attestation has no public key; falling back to proxy mode"
-                )
-                # Fall back to old proxy mode
-                proxy = await self._start_llm_proxy(
-                    identity.enclave_cid, nitro_api_key
+                raise OrchestrationError(
+                    "Attestation has no enclave public key. "
+                    "Cannot establish encrypted channel in Nitro mode."
                 )
 
             # Step 7: Send negotiation inputs to the enclave
@@ -439,15 +447,24 @@ class EnclaveOrchestrator:
         return tunnel
 
     async def _start_llm_proxy(self, enclave_cid: int, api_key: str):
-        """Start the vsock LLM proxy for Nitro mode (fallback).
+        """Start the vsock LLM proxy (simulated mode only).
 
-        The proxy forwards LLM API requests from the enclave to Anthropic,
-        keeping the API key on the parent side. Less secure than tunnel mode
-        because the parent sees plaintext.
+        The proxy forwards LLM API requests from the enclave to the LLM provider,
+        keeping the API key on the parent side. NOT allowed in Nitro mode because
+        the parent would see plaintext, destroying confidentiality.
 
         Returns:
             A VsockLLMProxy instance (with a stop() method for cleanup).
+
+        Raises:
+            OrchestrationError: If called in Nitro mode.
         """
+        if self._provider.get_tee_type() == TEEType.NITRO:
+            raise OrchestrationError(
+                "Plaintext LLM proxy is not allowed in Nitro mode. "
+                "Use the encrypted tunnel instead."
+            )
+
         try:
             from ndai.enclave.vsock_proxy import VsockProxy
         except ImportError as exc:

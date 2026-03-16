@@ -229,6 +229,19 @@ def _serialize_result(result: Any) -> dict[str, Any]:
     return d
 
 
+# Fields that are safe to send to the untrusted parent.
+# Everything else (omega_hat, theta, phi, payoffs, buyer_valuation) stays in the enclave.
+_SAFE_RESULT_FIELDS = {"outcome", "final_price", "reason"}
+
+
+def _strip_sensitive_fields(result_dict: dict[str, Any]) -> dict[str, Any]:
+    """Strip sensitive negotiation internals before sending to the parent.
+
+    Only outcome, final_price, and reason leave the enclave.
+    """
+    return {k: v for k, v in result_dict.items() if k in _SAFE_RESULT_FIELDS}
+
+
 # ---------------------------------------------------------------------------
 # vsock I/O helpers
 # ---------------------------------------------------------------------------
@@ -314,10 +327,11 @@ def _handle_negotiate(request: dict[str, Any]) -> dict[str, Any]:
         }
 
     result_dict = _serialize_result(result)
-    logger.info("Negotiation complete: outcome=%s", result_dict.get("outcome"))
+    safe_dict = _strip_sensitive_fields(result_dict)
+    logger.info("Negotiation complete: outcome=%s", safe_dict.get("outcome"))
     return {
         "status": "ok",
-        "result": result_dict,
+        "result": safe_dict,
     }
 
 

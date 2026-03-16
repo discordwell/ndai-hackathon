@@ -27,6 +27,4 @@ class AgreementResponse(BaseModel):
 class NegotiationOutcomeResponse(BaseModel):
     outcome: str
     final_price: float | None
-    omega_hat: float | None
-    negotiation_rounds: int | None
-    buyer_valuation: float | None = None
+    reason: str | None = None

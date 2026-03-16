@@ -93,7 +93,11 @@ class TestOrchestratorSimulatedMode:
 
         assert result.outcome == NegotiationOutcomeType.AGREEMENT
         assert result.final_price == 0.45
-        assert result.omega_hat == 0.6
+        # Sensitive fields are stripped — parent should not see internals
+        assert result.omega_hat == 0.0
+        assert result.buyer_valuation is None
+        assert result.seller_payoff is None
+        assert result.buyer_payoff is None
 
         # Verify session was created with correct config (no API key leak check
         # is implicit — the enclave never receives it in simulated mode because
@@ -291,12 +295,17 @@ class TestOrchestratorNitroMode:
     ):
         """Verify the message sent to the enclave has correct structure and no API key."""
         import base64
-        import json
 
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            PublicFormat,
+        )
+
+        from ndai.tee.attestation import AttestationResult
         from ndai.tee.provider import EnclaveIdentity, TEEProvider, TEEType
 
         provider = AsyncMock(spec=TEEProvider)
-        # get_tee_type is a sync method on TEEProvider, override explicitly
         provider.get_tee_type = MagicMock(return_value=TEEType.NITRO)
 
         identity = EnclaveIdentity(
@@ -309,48 +318,43 @@ class TestOrchestratorNitroMode:
         )
         provider.launch_enclave.return_value = identity
 
-        # The new Nitro flow: orchestrator sends get_attestation action to
-        # the enclave via send_message/receive_message, and the enclave
-        # returns a base64-encoded COSE Sign1 attestation doc.
-        # Then it sends deliver_key, then the negotiation.
         fixed_nonce = b"\x00" * 32
 
-        # Build a stub attestation doc using NSMStub
+        # Generate a test ephemeral public key
+        test_key = ec.generate_private_key(ec.SECP384R1())
+        test_pubkey_der = test_key.public_key().public_bytes(
+            Encoding.DER, PublicFormat.SubjectPublicKeyInfo
+        )
+
+        # Build a stub attestation doc WITH public key
         from ndai.enclave.nsm_stub import NSMStub
         stub = NSMStub(eif_path="test.eif")
-        attestation_doc = stub.get_attestation(nonce=fixed_nonce)
+        attestation_doc = stub.get_attestation(
+            nonce=fixed_nonce, public_key=test_pubkey_der
+        )
         attestation_b64 = base64.b64encode(attestation_doc).decode("ascii")
 
-        # Also prepare the legacy provider.get_attestation for fallback
-        attestation_json = json.dumps({
-            "type": "simulated_attestation",
-            "enclave_id": "nitro-test",
-            "pcr0": "aa", "pcr1": "bb", "pcr2": "cc",
-            "nonce": fixed_nonce.hex(),
-            "warning": "SIMULATED",
-        }).encode()
-        provider.get_attestation.return_value = attestation_json
+        # Mock attestation verification to return valid result with pubkey
+        mock_attestation = AttestationResult(
+            valid=True,
+            pcrs={0: "aa", 1: "bb", 2: "cc"},
+            enclave_cid=10,
+            timestamp=None,
+            enclave_public_key=test_pubkey_der,
+        )
 
         # Sequence of receive_message calls:
-        # 1. Attestation response (from _request_attestation)
-        # 2. Key delivery response (from _deliver_api_key) — only if pubkey present
-        # 3. Negotiation result (from _run_nitro)
-        # Since stub attestation doesn't embed a public key by default,
-        # the orchestrator falls back to proxy mode.
+        # 1. Attestation response with COSE doc
+        # 2. Key delivery ack
+        # 3. Negotiation result
         receive_side_effects = [
-            # 1. Attestation response — no attestation_doc, triggers fallback
+            {"status": "ok", "attestation_doc": attestation_b64},
             {"status": "ok"},
-            # 2. Negotiation result
             {
                 "status": "ok",
                 "result": {
                     "outcome": "agreement",
                     "final_price": 0.3,
-                    "omega_hat": 0.5,
-                    "theta": 0.65,
-                    "phi": 100.0,
-                    "seller_payoff": 0.4,
-                    "buyer_payoff": 0.2,
                     "reason": "Deal",
                 },
             },
@@ -361,14 +365,12 @@ class TestOrchestratorNitroMode:
 
         with (
             patch("ndai.tee.orchestrator.os.urandom", return_value=fixed_nonce),
+            patch("ndai.tee.orchestrator.verify_attestation", return_value=mock_attestation),
             patch("ndai.tee.orchestrator.EnclaveOrchestrator._start_tunnel") as mock_tunnel,
-            patch("ndai.tee.orchestrator.EnclaveOrchestrator._start_llm_proxy") as mock_proxy,
         ):
             mock_tunnel_instance = AsyncMock()
             mock_tunnel_instance.bytes_forwarded = 0
             mock_tunnel.return_value = mock_tunnel_instance
-            mock_proxy_instance = AsyncMock()
-            mock_proxy.return_value = mock_proxy_instance
 
             result = await orchestrator.run_negotiation(neg_config)
 
@@ -399,6 +401,98 @@ class TestOrchestratorNitroMode:
 
         # Enclave terminated
         provider.terminate_enclave.assert_called_once_with("nitro-test")
+
+    async def test_nitro_fails_closed_without_pubkey(
+        self, neg_config, test_settings
+    ):
+        """Nitro mode raises OrchestrationError when attestation lacks public key."""
+        from ndai.tee.attestation import AttestationResult
+        from ndai.tee.provider import EnclaveIdentity, TEEProvider, TEEType
+
+        provider = AsyncMock(spec=TEEProvider)
+        provider.get_tee_type = MagicMock(return_value=TEEType.NITRO)
+
+        identity = EnclaveIdentity(
+            enclave_id="nitro-no-pubkey",
+            enclave_cid=10,
+            pcr0="aa",
+            pcr1="bb",
+            pcr2="cc",
+            tee_type=TEEType.NITRO,
+        )
+        provider.launch_enclave.return_value = identity
+
+        fixed_nonce = b"\x00" * 32
+
+        # Mock attestation that is valid but has NO public key
+        mock_attestation = AttestationResult(
+            valid=True,
+            pcrs={0: "aa", 1: "bb", 2: "cc"},
+            enclave_cid=10,
+            timestamp=None,
+            enclave_public_key=None,  # <-- no public key
+        )
+
+        orchestrator = EnclaveOrchestrator(provider=provider, settings=test_settings)
+
+        with (
+            patch("ndai.tee.orchestrator.os.urandom", return_value=fixed_nonce),
+            patch.object(
+                orchestrator, "_request_attestation",
+                new_callable=AsyncMock, return_value=b"fake-attestation-bytes",
+            ),
+            patch("ndai.tee.orchestrator.verify_attestation", return_value=mock_attestation),
+            patch("ndai.tee.orchestrator.EnclaveOrchestrator._start_tunnel") as mock_tunnel,
+        ):
+            mock_tunnel_instance = AsyncMock()
+            mock_tunnel_instance.bytes_forwarded = 0
+            mock_tunnel.return_value = mock_tunnel_instance
+
+            with pytest.raises(OrchestrationError, match="no enclave public key"):
+                await orchestrator.run_negotiation(neg_config)
+
+        # Enclave must still be terminated
+        provider.terminate_enclave.assert_called_once_with("nitro-no-pubkey")
+
+    async def test_simulated_result_stripped(
+        self, neg_config, test_settings
+    ):
+        """Simulated mode strips sensitive fields from result."""
+        provider = SimulatedTEEProvider()
+        orchestrator = EnclaveOrchestrator(provider=provider, settings=test_settings)
+
+        mock_result = NegotiationResult(
+            outcome=NegotiationOutcomeType.AGREEMENT,
+            final_price=0.45,
+            omega_hat=0.6,
+            theta=0.65,
+            phi=100.0,
+            seller_payoff=0.5,
+            buyer_payoff=0.15,
+            buyer_valuation=0.6,
+            reason="Nash bargaining equilibrium reached",
+        )
+
+        with patch(
+            "ndai.tee.orchestrator.NegotiationSession"
+        ) as mock_session_cls:
+            mock_instance = mock_session_cls.return_value
+            mock_instance.run.return_value = mock_result
+
+            result = await orchestrator.run_negotiation(neg_config)
+
+        # Result should have outcome and final_price preserved
+        assert result.outcome == NegotiationOutcomeType.AGREEMENT
+        assert result.final_price == 0.45
+        assert result.reason == "Nash bargaining equilibrium reached"
+
+        # Sensitive internals should be zeroed/None
+        assert result.omega_hat == 0.0
+        assert result.theta == 0.0
+        assert result.phi == 0.0
+        assert result.seller_payoff is None
+        assert result.buyer_payoff is None
+        assert result.buyer_valuation is None
 
     async def test_nitro_terminates_on_tunnel_import_error(
         self, neg_config, test_settings
