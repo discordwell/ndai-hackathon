@@ -320,7 +320,7 @@ class OpenAILLMClient:
 
         kwargs: dict[str, Any] = {
             "model": self.model,
-            "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,
             "messages": openai_messages,
         }
         if tools:
