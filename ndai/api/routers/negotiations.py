@@ -11,7 +11,7 @@ from ndai.api.schemas.agreement import NegotiationOutcomeResponse
 from ndai.config import settings
 from ndai.enclave.agents.base_agent import InventionSubmission
 from ndai.enclave.negotiation.engine import SecurityParams
-from ndai.enclave.session import NegotiationSession, SessionConfig
+from ndai.tee.orchestrator import EnclaveNegotiationConfig, EnclaveOrchestrator
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -21,25 +21,41 @@ _outcomes: dict[str, dict] = {}
 _statuses: dict[str, dict] = {}
 
 
-def _run_negotiation_sync(agreement_id: str, config: SessionConfig, agreement: dict) -> None:
-    """Run negotiation synchronously (called from background thread)."""
+def _get_provider():
+    """Create the appropriate TEE provider based on settings.tee_mode."""
+    if settings.tee_mode == "nitro":
+        from ndai.tee.nitro_provider import NitroEnclaveProvider
+        return NitroEnclaveProvider()
+    else:
+        from ndai.tee.simulated_provider import SimulatedTEEProvider
+        return SimulatedTEEProvider()
+
+
+async def _run_negotiation_async(
+    agreement_id: str,
+    config: EnclaveNegotiationConfig,
+    agreement: dict,
+) -> None:
+    """Run negotiation via EnclaveOrchestrator (called as background task)."""
     try:
         _statuses[agreement_id] = {"status": "running"}
-        session = NegotiationSession(config)
-        result = session.run()
+
+        provider = _get_provider()
+        orchestrator = EnclaveOrchestrator(provider=provider, settings=settings)
+        result = await orchestrator.run_negotiation(config)
 
         _outcomes[agreement_id] = {
             "outcome": result.outcome.value,
             "final_price": result.final_price,
             "omega_hat": result.omega_hat,
-            "negotiation_rounds": len(session.transcript.messages),
+            "negotiation_rounds": None,  # Round count not tracked through orchestrator
         }
         agreement["status"] = f"completed_{result.outcome.value}"
         _statuses[agreement_id] = {
             "status": "completed",
             "outcome": _outcomes[agreement_id],
         }
-    except Exception as e:
+    except Exception:
         logger.error("Negotiation failed for %s: %s", agreement_id, traceback.format_exc())
         _statuses[agreement_id] = {
             "status": "error",
@@ -56,7 +72,7 @@ async def start_negotiation(
     """Trigger a negotiation session for an agreement.
 
     Returns 202 with status polling URL. The negotiation runs in a
-    background thread via asyncio.to_thread.
+    background task using the EnclaveOrchestrator.
     """
     from ndai.api.routers.agreements import _agreements
     from ndai.api.routers.inventions import _inventions
@@ -89,7 +105,7 @@ async def start_negotiation(
         max_disclosure_fraction=invention_data.get("max_disclosure_fraction", 1.0),
     )
 
-    config = SessionConfig(
+    config = EnclaveNegotiationConfig(
         invention=invention,
         budget_cap=agreement.get("budget_cap", 1.0),
         security_params=SecurityParams(
@@ -104,9 +120,9 @@ async def start_negotiation(
 
     _statuses[agreement_id] = {"status": "pending"}
 
-    # Run in background thread so the endpoint returns immediately
+    # Run in background task using the orchestrator
     asyncio.create_task(
-        asyncio.to_thread(_run_negotiation_sync, agreement_id, config, agreement)
+        _run_negotiation_async(agreement_id, config, agreement)
     )
 
     return {"status": "pending"}

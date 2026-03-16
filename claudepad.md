@@ -17,6 +17,18 @@
 - Wet tested full flow: register seller -> submit invention -> register buyer -> browse marketplace -> create agreement -> set params (theta computed) -> confirm delegation -> start negotiation button appears
 - Phase 4 (TEE integration) still requires AWS Nitro hardware
 
+### 2026-03-16T12:30Z — Phase 4: TEE Integration (AWS Nitro)
+- Decided on AWS Nitro Enclaves (free, just pay for EC2 instance ~$0.17/hr c5.xlarge)
+- Enclave-side app (`ndai/enclave/app.py`): vsock listener, runs NegotiationSession inside enclave
+- Vsock LLM proxy (`vsock_proxy.py`): parent-side proxy forwards Claude API calls from enclave (enclave has no network)
+- Vsock LLM client (`vsock_llm_client.py`): enclave-side client that routes through proxy instead of direct HTTPS
+- Attestation module (`ndai/tee/attestation.py`): CBOR parsing of Nitro attestation docs, PCR verification
+- Parent-side orchestrator (`ndai/tee/orchestrator.py`): full lifecycle management (launch → attest → negotiate → terminate)
+- EIF build pipeline: Dockerfile + build.sh in enclave-build/
+- API integration: negotiations router now uses EnclaveOrchestrator, provider selected by tee_mode setting
+- 170 tests passing (80 new from Phase 4)
+- Coded via 3 parallel subagents: enclave app, orchestrator, build pipeline
+
 ## Key Findings
 
 - Paper's acceptance threshold: seller accepts if P >= alpha_0 * omega_hat (derived from P + alpha_0*(omega-omega_hat) >= alpha_0*omega)

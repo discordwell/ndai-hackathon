@@ -84,6 +84,90 @@ Seller submits invention (encrypted client-side)
 - Claude API (Anthropic) for LLM agents
 - React 19 + TypeScript + Tailwind CSS frontend (esbuild, served by FastAPI)
 
+## TEE Deployment (AWS Nitro)
+
+### Building the Enclave Image
+
+The enclave image is built in two steps: Dockerfile to Docker image, then Docker image to EIF (Enclave Image Format) via `nitro-cli`.
+
+```
+enclave-build/Dockerfile  →  docker build  →  ndai-enclave:latest
+                                                     ↓
+                                              nitro-cli build-enclave
+                                                     ↓
+                                              ndai_enclave.eif + PCR values
+```
+
+Build command: `make enclave-build`
+
+The Dockerfile uses a multi-stage build (python:3.11-slim) to minimize image size. Only the ndai package and its runtime dependencies are included — no dev tools, no shell in production.
+
+### Instance Requirements
+
+| Requirement | Value |
+|-------------|-------|
+| Instance type | c5.xlarge or larger (must be Nitro-capable) |
+| nitro-cli | `sudo amazon-linux-extras install aws-nitro-enclaves-cli` |
+| Allocator config | `/etc/nitro_enclaves/allocator.yaml`: set `memory_mib: 1600`, `cpu_count: 2` |
+| Allocator service | `sudo systemctl enable --now nitro-enclaves-allocator` |
+| Docker | Required for building EIF |
+
+After configuring the allocator, restart it: `sudo systemctl restart nitro-enclaves-allocator`.
+
+### vsock Communication Architecture
+
+Nitro Enclaves have no network interface. All communication between the parent EC2 instance and the enclave uses AF_VSOCK (virtio socket), a kernel-level IPC mechanism addressed by CID (Context ID) and port.
+
+```
+Parent EC2 Instance                    Nitro Enclave (CID assigned at launch)
+┌──────────────────────┐              ┌──────────────────────────────┐
+│  EnclaveOrchestrator │              │  ndai.enclave.app            │
+│  (ndai/tee/          │   vsock      │  ├── NegotiationSession      │
+│   orchestrator.py)   │◄────────────►│  ├── SellerAgent (Claude)    │
+│                      │  port 5000   │  ├── BuyerAgent (Claude)     │
+│  LLM Proxy           │              │  └── NegotiationEngine       │
+│  (forwards Claude    │   vsock      │                              │
+│   API calls)         │◄────────────►│  VsockLLMClient              │
+│                      │  port 5001   │  (TLS terminates here)       │
+└──────────────────────┘              └──────────────────────────────┘
+```
+
+Messages are length-prefixed (4-byte big-endian header + JSON payload). The parent proxies Claude API calls: the enclave sends HTTPS requests through the proxy, but TLS terminates inside the enclave so the parent sees only ciphertext.
+
+### PCR Values and Attestation
+
+When `nitro-cli build-enclave` produces an EIF, it outputs PCR (Platform Configuration Register) values:
+
+| PCR | Contents |
+|-----|----------|
+| PCR0 | Hash of the enclave image (EIF) |
+| PCR1 | Hash of the Linux kernel and boot ramdisk |
+| PCR2 | Hash of the application code |
+
+These values are deterministic: the same Dockerfile and source code always produce the same PCRs. Before disclosing any invention data, the orchestrator requests an attestation document from the enclave (signed by the Nitro hypervisor's hardware root of trust) and verifies that PCR0/1/2 match the expected values. This proves the enclave is running the exact code that was audited.
+
+Attestation documents are CBOR-encoded, signed by AWS Nitro, and parsed with `cbor2`. The `ndai/tee/attestation.py` module handles verification.
+
+For development, `SimulatedTEEProvider` generates deterministic test PCRs (SHA-384 of the EIF path). These provide no security guarantees but enable local testing without Nitro hardware.
+
+### Running in Production
+
+1. Build the EIF: `make enclave-build` (on a Nitro-capable instance)
+2. Record the PCR values from the build output
+3. Configure environment:
+   ```
+   TEE_MODE=nitro
+   ENCLAVE_EIF_PATH=ndai_enclave.eif
+   ENCLAVE_CPU_COUNT=2
+   ENCLAVE_MEMORY_MIB=1600
+   ENCLAVE_VSOCK_PORT=5000
+   ```
+4. The orchestrator handles launch, attestation verification, negotiation, and teardown automatically
+
+### Development Mode
+
+Set `TEE_MODE=simulated` (the default) to use `SimulatedTEEProvider`. This runs negotiations in-process with no isolation, no vsock, and self-signed attestation documents. All integration tests use this mode.
+
 ## Frontend Architecture
 
 Hash-based SPA router, no external routing library. FastAPI serves `frontend/dist/` as static files with catch-all for SPA routes.

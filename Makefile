@@ -1,4 +1,4 @@
-.PHONY: install dev test lint format migrate run frontend-install frontend-build frontend-dev
+.PHONY: install dev test lint format migrate run infra infra-down enclave-build frontend-install frontend-build frontend-dev
 
 install:
 	pip install -e .
