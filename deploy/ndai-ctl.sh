@@ -140,13 +140,13 @@ APP
       exit 1
     fi
     IP=$(get_ip)
-    echo "Sending heartbeats to $IP every 5 minutes (Ctrl+C to stop)"
-    echo "Instance will auto-stop 15 minutes after you stop this."
+    echo "Sending heartbeats to $IP every 10 minutes (Ctrl+C to stop)"
+    echo "Instance will auto-stop 30 minutes after you stop this."
     while true; do
       ssh $SSH_OPTS "ec2-user@$IP" "touch /tmp/ndai-heartbeat" 2>/dev/null && \
         echo "  [$(date +%H:%M:%S)] heartbeat sent" || \
         echo "  [$(date +%H:%M:%S)] heartbeat FAILED"
-      sleep 300
+      sleep 600
     done
     ;;
 
