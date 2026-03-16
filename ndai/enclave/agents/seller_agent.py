@@ -16,6 +16,18 @@ from ndai.enclave.agents.base_agent import (
 from ndai.enclave.agents.llm_client import LLMClient
 
 
+def _sanitize_agent_text(text: str, max_length: int = 2000) -> str:
+    """Sanitize text from the other agent to mitigate prompt injection."""
+    truncated = text[:max_length]
+    # Strip common injection patterns
+    for pattern in [
+        "IGNORE PREVIOUS", "SYSTEM:", "INSTRUCTIONS:", "```system",
+        "<system>", "</system>", "OVERRIDE",
+    ]:
+        truncated = truncated.replace(pattern, "[FILTERED]")
+    return truncated
+
+
 SELLER_TOOLS = [
     {
         "name": "make_disclosure",
@@ -93,7 +105,8 @@ class SellerAgent:
     Hard constraints enforced in code:
     - omega_hat <= omega (cannot overdisclose)
     - omega_hat <= phi (security capacity limit)
-    - Rejects prices below theta * omega (acceptance threshold)
+    - omega_hat <= omega * max_disclosure_fraction (voluntary cap)
+    - Rejects prices below alpha_0 * omega_hat (acceptance threshold)
     """
 
     def __init__(
@@ -179,9 +192,10 @@ generally prefer higher disclosure."""
 
         args = tool_use["input"]
 
-        # HARD CONSTRAINT: clamp disclosed_value
+        # HARD CONSTRAINTS: clamp disclosed_value to all ceilings
         raw_value = float(args.get("disclosed_value", self.omega))
-        disclosed_value = min(raw_value, self.omega, self.phi)
+        voluntary_cap = self.omega * self.invention.max_disclosure_fraction
+        disclosed_value = min(raw_value, self.omega, self.phi, voluntary_cap)
         disclosed_value = max(disclosed_value, 0.0)
 
         self.disclosed_omega_hat = disclosed_value
@@ -216,16 +230,18 @@ generally prefer higher disclosure."""
                     confidence=1.0,
                 ),
                 explanation=f"This offer is below our minimum. Counter at {self.acceptance_floor:.4f}.",
-                private_reasoning="Hard constraint: price below theta * omega",
+                private_reasoning="Hard constraint: price below alpha_0 * omega_hat",
             )
 
         # Ask LLM for nuanced response
+        # Sanitize buyer's explanation to mitigate prompt injection
+        safe_explanation = _sanitize_agent_text(buyer_explanation)
         self._conversation.append(
             {
                 "role": "user",
                 "content": (
                     f"The buyer's agent offers {price:.4f}. "
-                    f"Their explanation: {buyer_explanation}\n"
+                    f"Their explanation: {safe_explanation}\n"
                     f"Your minimum is {self.acceptance_floor:.4f}. Respond."
                 ),
             }

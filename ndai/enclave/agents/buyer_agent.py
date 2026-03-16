@@ -15,6 +15,17 @@ from ndai.enclave.agents.base_agent import (
 from ndai.enclave.agents.llm_client import LLMClient
 
 
+def _sanitize_agent_text(text: str, max_length: int = 2000) -> str:
+    """Sanitize text from the other agent to mitigate prompt injection."""
+    truncated = text[:max_length]
+    for pattern in [
+        "IGNORE PREVIOUS", "SYSTEM:", "INSTRUCTIONS:", "```system",
+        "<system>", "</system>", "OVERRIDE",
+    ]:
+        truncated = truncated.replace(pattern, "[FILTERED]")
+    return truncated
+
+
 BUYER_TOOLS = [
     {
         "name": "evaluate_invention",
@@ -157,12 +168,16 @@ theoretically optimal outcome. Significant deviations risk deal failure."""
 
         if eval_tool:
             self.assessed_value = float(eval_tool["input"].get("assessed_value", 0))
-            # Continue to offer
+            # Send tool_result and follow-up prompt
             self._conversation.append(
                 {
                     "role": "user",
                     "content": [
-                        {"type": "tool_result", "tool_use_id": eval_tool["id"], "content": "Evaluation recorded. Now make your price offer."},
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": eval_tool["id"],
+                            "content": [{"type": "text", "text": "Evaluation recorded. Now make your price offer."}],
+                        },
                     ],
                 }
             )
@@ -212,12 +227,13 @@ theoretically optimal outcome. Significant deviations risk deal failure."""
         round_num: int,
     ) -> AgentMessage:
         """Respond to a seller's counteroffer."""
+        safe_explanation = _sanitize_agent_text(seller_explanation)
         self._conversation.append(
             {
                 "role": "user",
                 "content": (
                     f"The seller's agent counters at {counter_price:.4f}. "
-                    f"Their explanation: {seller_explanation}\n"
+                    f"Their explanation: {safe_explanation}\n"
                     f"Your budget cap is {self.budget_cap}. Make your response."
                 ),
             }

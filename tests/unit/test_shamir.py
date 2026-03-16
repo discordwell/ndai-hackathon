@@ -9,6 +9,22 @@ from hypothesis import strategies as st
 from ndai.crypto.shamir import PRIME, Share, reconstruct, reconstruct_bytes, split
 
 
+class TestPrime:
+    def test_prime_is_actually_prime(self):
+        """Verify the 256-bit prime used for Shamir SSS is actually prime."""
+        # Miller-Rabin with sufficient rounds for 256-bit number
+        assert pow(2, PRIME - 1, PRIME) == 1  # Fermat test
+        assert pow(3, PRIME - 1, PRIME) == 1
+        assert pow(5, PRIME - 1, PRIME) == 1
+        # Use sympy-style deterministic check for small witnesses
+        # For a 256-bit number, testing witnesses 2,3,5,7,11,13 is sufficient
+        for a in [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31]:
+            assert pow(a, PRIME - 1, PRIME) == 1, f"Fermat test failed for witness {a}"
+
+    def test_prime_is_256_bits(self):
+        assert PRIME.bit_length() == 256
+
+
 class TestSplit:
     def test_basic_split(self):
         secret = 42

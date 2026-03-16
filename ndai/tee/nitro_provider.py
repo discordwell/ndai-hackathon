@@ -32,6 +32,7 @@ class NitroEnclaveProvider(TEEProvider):
 
     def __init__(self):
         self._active_enclaves: dict[str, EnclaveIdentity] = {}
+        self._enclave_configs: dict[str, EnclaveConfig] = {}
 
     async def launch_enclave(self, config: EnclaveConfig) -> EnclaveIdentity:
         cmd = [
@@ -62,6 +63,7 @@ class NitroEnclaveProvider(TEEProvider):
             tee_type=TEEType.NITRO,
         )
         self._active_enclaves[identity.enclave_id] = identity
+        self._enclave_configs[identity.enclave_id] = config
         return identity
 
     async def terminate_enclave(self, enclave_id: str) -> None:
@@ -71,15 +73,18 @@ class NitroEnclaveProvider(TEEProvider):
         )
         await proc.communicate()
         self._active_enclaves.pop(enclave_id, None)
+        self._enclave_configs.pop(enclave_id, None)
 
     async def send_message(self, enclave_id: str, message: dict[str, Any]) -> None:
         identity = self._get_identity(enclave_id)
+        config = self._enclave_configs[enclave_id]
         data = json.dumps(message).encode()
-        await self._vsock_send(identity.enclave_cid, identity.enclave_cid, data)
+        await self._vsock_send(identity.enclave_cid, config.vsock_port, data)
 
     async def receive_message(self, enclave_id: str) -> dict[str, Any]:
         identity = self._get_identity(enclave_id)
-        data = await self._vsock_receive(identity.enclave_cid, 5000)
+        config = self._enclave_configs[enclave_id]
+        data = await self._vsock_receive(identity.enclave_cid, config.vsock_port)
         return json.loads(data)
 
     async def get_attestation(self, enclave_id: str, nonce: bytes | None = None) -> bytes:
@@ -119,7 +124,17 @@ class NitroEnclaveProvider(TEEProvider):
         sock = socket.socket(AF_VSOCK, socket.SOCK_STREAM)
         try:
             await loop.run_in_executor(None, sock.connect, (cid, port))
-            length_bytes = await loop.run_in_executor(None, sock.recv, 4)
+
+            # Read exactly 4 bytes for the length header
+            length_bytes = b""
+            while len(length_bytes) < 4:
+                chunk = await loop.run_in_executor(
+                    None, sock.recv, 4 - len(length_bytes)
+                )
+                if not chunk:
+                    raise ConnectionError("vsock closed during length read")
+                length_bytes += chunk
+
             length = struct.unpack(">I", length_bytes)[0]
             data = b""
             while len(data) < length:
