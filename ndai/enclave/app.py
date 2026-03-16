@@ -243,8 +243,7 @@ def _handle_negotiate(request: dict[str, Any]) -> dict[str, Any]:
         logger.exception("Negotiation failed")
         return {
             "status": "error",
-            "error": f"Negotiation failed: {exc}",
-            "traceback": traceback.format_exc(),
+            "error": "Negotiation failed. Check enclave logs for details.",
         }
 
     result_dict = _serialize_result(result)

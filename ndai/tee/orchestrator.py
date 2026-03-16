@@ -372,15 +372,15 @@ class EnclaveOrchestrator:
             A VsockLLMProxy instance (with a stop() method for cleanup).
         """
         try:
-            from ndai.enclave.vsock_proxy import VsockLLMProxy
+            from ndai.enclave.vsock_proxy import VsockProxy
         except ImportError as exc:
             raise OrchestrationError(
                 "vsock_proxy module not available. Ensure ndai.enclave.vsock_proxy "
                 "is installed for Nitro mode."
             ) from exc
 
-        proxy = VsockLLMProxy(api_key=api_key)
-        await proxy.start(enclave_cid=enclave_cid)
+        proxy = VsockProxy(api_key=api_key)
+        await proxy.run_background()
         logger.info("LLM proxy started for enclave cid=%d", enclave_cid)
         return proxy
 
@@ -395,19 +395,38 @@ class EnclaveOrchestrator:
     def _parse_enclave_response(self, response: dict) -> NegotiationResult:
         """Parse the JSON response from the enclave into a NegotiationResult.
 
-        Expected format:
-            {
-                "outcome": "agreement" | "no_deal" | "error",
-                "final_price": float | null,
-                "omega_hat": float,
-                "theta": float,
-                "phi": float,
-                "seller_payoff": float | null,
-                "buyer_payoff": float | null,
-                "reason": str
-            }
+        The enclave wraps results as {"status": "ok", "result": {...}} or
+        {"status": "error", "error": "..."}. Unwrap before parsing.
         """
         try:
+            # Unwrap enclave envelope if present
+            if "status" in response and "result" in response:
+                if response["status"] != "ok":
+                    error_msg = response.get("error", "Enclave returned error status")
+                    return NegotiationResult(
+                        outcome=NegotiationOutcomeType.ERROR,
+                        final_price=None,
+                        omega_hat=0.0,
+                        theta=0.0,
+                        phi=0.0,
+                        seller_payoff=None,
+                        buyer_payoff=None,
+                        reason=error_msg,
+                    )
+                response = response["result"]
+            elif "status" in response and response["status"] == "error":
+                error_msg = response.get("error", "Enclave returned error")
+                return NegotiationResult(
+                    outcome=NegotiationOutcomeType.ERROR,
+                    final_price=None,
+                    omega_hat=0.0,
+                    theta=0.0,
+                    phi=0.0,
+                    seller_payoff=None,
+                    buyer_payoff=None,
+                    reason=error_msg,
+                )
+
             outcome_str = response.get("outcome", "error")
             try:
                 outcome = NegotiationOutcomeType(outcome_str)

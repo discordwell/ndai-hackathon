@@ -21,7 +21,7 @@ Frontend (React) → FastAPI Backend → Parent EC2 Instance → Nitro Enclave
 **Inside enclave** (secure): AI agents, negotiation engine, invention plaintext, Shamir reconstruction.
 **Outside enclave** (untrusted): API, database, frontend, enclave orchestrator.
 
-The parent instance proxies Claude API calls via vsock. TLS terminates inside the enclave, so the parent sees only encrypted bytes.
+The parent instance proxies Claude API calls via vsock. The API key stays on the parent side and never enters the enclave. Note: the parent currently sees plaintext API traffic; enclave-side TLS termination is planned for a future phase.
 
 ## Core Mechanism
 
@@ -128,11 +128,11 @@ Parent EC2 Instance                    Nitro Enclave (CID assigned at launch)
 │  LLM Proxy           │              │  └── NegotiationEngine       │
 │  (forwards Claude    │   vsock      │                              │
 │   API calls)         │◄────────────►│  VsockLLMClient              │
-│                      │  port 5001   │  (TLS terminates here)       │
+│                      │  port 5001   │  (proxied API calls)         │
 └──────────────────────┘              └──────────────────────────────┘
 ```
 
-Messages are length-prefixed (4-byte big-endian header + JSON payload). The parent proxies Claude API calls: the enclave sends HTTPS requests through the proxy, but TLS terminates inside the enclave so the parent sees only ciphertext.
+Messages are length-prefixed (4-byte big-endian header + JSON payload). The parent proxies Claude API calls: the enclave sends serialized requests over vsock, the parent forwards them to the Anthropic API over HTTPS. Note: the parent can observe API request/response content. The API key is kept parent-side and never enters the enclave. Future work: implement TLS termination inside the enclave for full confidentiality of LLM interactions.
 
 ### PCR Values and Attestation
 
