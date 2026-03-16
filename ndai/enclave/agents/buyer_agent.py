@@ -11,7 +11,6 @@ from ndai.enclave.agents.base_agent import (
     AgentMessage,
     AgentRole,
     InventionDisclosure,
-    PriceProposal,
 )
 from ndai.enclave.agents.llm_client import LLMClient
 
@@ -163,56 +162,6 @@ the seller independently discloses. Both decisions shape the final price."""
             explanation=str(args.get("reasoning", "")),
             private_reasoning=str(args.get("reasoning", "")),
             raw_response=eval_tool,
-        )
-
-    def respond_to_counter(
-        self,
-        counter_price: float,
-        seller_explanation: str,
-        disclosure: InventionDisclosure,
-        round_num: int,
-    ) -> AgentMessage:
-        """Respond to a seller's counteroffer."""
-        safe_explanation = _sanitize_agent_text(seller_explanation)
-        self._conversation.append(
-            {
-                "role": "user",
-                "content": (
-                    f"The seller's agent counters at {counter_price:.4f}. "
-                    f"Their explanation: {safe_explanation}\n"
-                    f"Your budget cap is {self.budget_cap}. Make your response."
-                ),
-            }
-        )
-
-        response = self.llm.create_message(
-            system=self._system_prompt(disclosure),
-            messages=self._conversation,
-            tools=BUYER_TOOLS,
-            tool_choice={"type": "tool", "name": "make_offer"},
-        )
-
-        tool_use = self.llm.extract_tool_use(response)
-        self._conversation.append({"role": "assistant", "content": response.content})
-
-        if not tool_use:
-            return self._fallback_offer(disclosure, round_num)
-
-        args = tool_use["input"]
-        raw_price = float(args.get("price", 0))
-        price = max(0.0, min(raw_price, self.budget_cap))
-
-        return AgentMessage(
-            role=AgentRole.BUYER,
-            round_number=round_num,
-            price_proposal=PriceProposal(
-                proposed_price=price,
-                reasoning=str(args.get("private_reasoning", "")),
-                confidence=0.7,
-            ),
-            explanation=str(args.get("explanation", "")),
-            private_reasoning=str(args.get("private_reasoning", "")),
-            raw_response=tool_use,
         )
 
     def _fallback_evaluation(

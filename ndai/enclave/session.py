@@ -24,7 +24,7 @@ from ndai.enclave.negotiation.engine import (
     compute_bilateral_price,
     compute_seller_payoff,
     compute_theta,
-    resolve_negotiation,
+    resolve_negotiation,  # unilateral baseline for audit comparison
     security_capacity,
 )
 

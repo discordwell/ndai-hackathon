@@ -98,11 +98,10 @@ def _make_mock_tool_response(tool_name: str, tool_input: dict, tool_id: str = "t
 def _patch_llm_for_full_negotiation():
     """Patch LLMClient.create_message to return deterministic tool-use responses.
 
-    Simulates:
-    1. Seller disclosure (make_disclosure)
-    2. Buyer evaluation (evaluate_invention)
-    3. Buyer offer (make_offer)
-    Subsequent calls return accept-style responses.
+    Bilateral flow (2 API calls):
+    1. Seller disclosure (make_disclosure) → omega_hat=0.6
+    2. Buyer evaluation (evaluate_invention) → v_b=0.55
+    Resolution: P* = (0.55 + 0.3*0.6) / 2 = 0.365
     """
     responses = [
         # 1. Seller disclosure
@@ -113,25 +112,13 @@ def _patch_llm_for_full_negotiation():
             "withheld_aspects": ["NTT optimization trick"],
             "reasoning": "Disclosing near phi for maximum surplus.",
         }, tool_id="disc_01"),
-        # 2. Buyer evaluation
+        # 2. Buyer evaluation (bilateral: no make_offer needed)
         _make_mock_tool_response("evaluate_invention", {
             "assessed_value": 0.55,
             "strengths": ["Post-quantum security", "Efficient implementation"],
             "concerns": ["Early prototype stage"],
             "reasoning": "Strong technical merit but unproven at scale.",
         }, tool_id="eval_01"),
-        # 3. Buyer offer
-        _make_mock_tool_response("make_offer", {
-            "price": 0.39,
-            "explanation": "Offering near equilibrium price.",
-            "private_reasoning": "theta * omega_hat = 0.65 * 0.6 = 0.39",
-        }, tool_id="offer_01"),
-        # 4. Seller evaluates offer (accept)
-        _make_mock_tool_response("respond_to_offer", {
-            "action": "accept",
-            "explanation": "Price is above our minimum threshold.",
-            "private_reasoning": "Above floor, accept.",
-        }, tool_id="resp_01"),
     ]
 
     call_count = {"n": 0}
