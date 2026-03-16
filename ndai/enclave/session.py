@@ -38,6 +38,10 @@ class SessionConfig:
     budget_cap: float
     security_params: SecurityParams
     max_rounds: int = 5
+    llm_provider: str = "anthropic"  # "anthropic" or "openai"
+    api_key: str = ""
+    llm_model: str = "claude-sonnet-4-20250514"
+    # Legacy aliases (kept for backwards compatibility)
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
 
@@ -68,10 +72,18 @@ class NegotiationSession:
         self.theta = compute_theta(config.invention.outside_option_value)
         self.transcript = SessionTranscript()
 
-        llm = LLMClient(
-            api_key=config.anthropic_api_key,
-            model=config.anthropic_model,
-        )
+        # Resolve API key and model: prefer generic fields, fall back to legacy
+        api_key = config.api_key or config.anthropic_api_key
+        llm_model = config.llm_model
+        # If llm_model is still the default and legacy anthropic_model was changed, use it
+        if config.llm_model == "claude-sonnet-4-20250514" and config.anthropic_model != "claude-sonnet-4-20250514":
+            llm_model = config.anthropic_model
+
+        if config.llm_provider == "openai":
+            from ndai.enclave.agents.openai_llm_client import OpenAILLMClient
+            llm = OpenAILLMClient(api_key=api_key, model=llm_model)
+        else:
+            llm = LLMClient(api_key=api_key, model=llm_model)
 
         self.seller_agent = SellerAgent(
             invention=config.invention,

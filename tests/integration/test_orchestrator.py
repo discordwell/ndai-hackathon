@@ -350,7 +350,7 @@ class TestOrchestratorNitroMode:
         assert sent_msg["budget_cap"] == 1.0
         assert sent_msg["security_params"]["k"] == 3
         assert sent_msg["max_rounds"] == 2
-        assert sent_msg["anthropic_model"] == "claude-sonnet-4-20250514"
+        assert sent_msg["llm_model"] == "claude-sonnet-4-20250514"
 
         # API key must NOT be in the message to the enclave
         assert "anthropic_api_key" not in sent_msg

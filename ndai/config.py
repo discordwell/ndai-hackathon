@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
 
+    # LLM Provider ("anthropic" or "openai")
+    llm_provider: str = "anthropic"
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o"
+
     # TEE
     tee_mode: str = "simulated"  # "simulated" or "nitro"
     enclave_cpu_count: int = 2

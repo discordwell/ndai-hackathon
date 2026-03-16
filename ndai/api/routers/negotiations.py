@@ -105,6 +105,14 @@ async def start_negotiation(
         max_disclosure_fraction=invention_data.get("max_disclosure_fraction", 1.0),
     )
 
+    # Resolve LLM provider settings
+    if settings.llm_provider == "openai":
+        _api_key = settings.openai_api_key
+        _llm_model = settings.openai_model
+    else:
+        _api_key = settings.anthropic_api_key
+        _llm_model = settings.anthropic_model
+
     config = EnclaveNegotiationConfig(
         invention=invention,
         budget_cap=agreement.get("budget_cap", 1.0),
@@ -114,8 +122,9 @@ async def start_negotiation(
             c=settings.breach_penalty,
         ),
         max_rounds=settings.max_negotiation_rounds,
-        anthropic_api_key=settings.anthropic_api_key,
-        anthropic_model=settings.anthropic_model,
+        llm_provider=settings.llm_provider,
+        api_key=_api_key,
+        llm_model=_llm_model,
     )
 
     _statuses[agreement_id] = {"status": "pending"}

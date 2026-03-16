@@ -55,7 +55,11 @@ class EnclaveNegotiationConfig:
     budget_cap: float
     security_params: SecurityParams
     max_rounds: int = 5
-    anthropic_api_key: str = ""  # Stays on parent, never enters enclave
+    llm_provider: str = "anthropic"  # "anthropic" or "openai"
+    api_key: str = ""  # Stays on parent, never enters enclave
+    llm_model: str = "claude-sonnet-4-20250514"
+    # Legacy aliases (kept for backwards compatibility)
+    anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
     expected_pcrs: dict[int, str] | None = None  # For attestation verification
     enclave_config: EnclaveConfig | None = None  # Override defaults
@@ -154,13 +158,20 @@ class EnclaveOrchestrator:
             )
 
             # Step 4+5: Run NegotiationSession directly in-process
+            # Resolve API key: prefer generic field, fall back to legacy
+            api_key = config.api_key or config.anthropic_api_key
+            llm_model = config.llm_model
+            if config.llm_model == "claude-sonnet-4-20250514" and config.anthropic_model != "claude-sonnet-4-20250514":
+                llm_model = config.anthropic_model
+
             session_config = SessionConfig(
                 invention=config.invention,
                 budget_cap=config.budget_cap,
                 security_params=config.security_params,
                 max_rounds=config.max_rounds,
-                anthropic_api_key=config.anthropic_api_key,
-                anthropic_model=config.anthropic_model,
+                llm_provider=config.llm_provider,
+                api_key=api_key,
+                llm_model=llm_model,
             )
 
             session = NegotiationSession(session_config)
@@ -250,8 +261,9 @@ class EnclaveOrchestrator:
             )
 
             # Step 2: Start vsock LLM proxy
+            nitro_api_key = config.api_key or config.anthropic_api_key
             proxy = await self._start_llm_proxy(
-                identity.enclave_cid, config.anthropic_api_key
+                identity.enclave_cid, nitro_api_key
             )
 
             # Step 3: Verify attestation
@@ -296,7 +308,8 @@ class EnclaveOrchestrator:
                     "gamma": config.security_params.gamma,
                 },
                 "max_rounds": config.max_rounds,
-                "anthropic_model": config.anthropic_model,
+                "llm_provider": config.llm_provider,
+                "llm_model": config.llm_model or config.anthropic_model,
             }
 
             logger.info("Sending negotiation inputs to enclave")
