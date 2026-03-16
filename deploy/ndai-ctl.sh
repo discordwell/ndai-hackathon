@@ -76,15 +76,15 @@ touch /tmp/ndai-heartbeat
 echo "Watchdog installed (auto-stop after 15min without heartbeat)"
 WATCHDOG
 
-    # Start the app
+    # Start the app via systemd
     ssh $SSH_OPTS "ec2-user@$IP" << 'APP'
 cd ndai-hackathon
-source .venv/bin/activate
-if ! pgrep -f uvicorn > /dev/null; then
-  nohup uvicorn ndai.api.app:create_app --factory --host 0.0.0.0 --port 8000 > /tmp/ndai.log 2>&1 &
-  sleep 2
-fi
-curl -sf http://localhost:8000/health > /dev/null && echo "NDAI server running" || echo "Server failed to start — check: ssh ec2-user@$(curl -s ifconfig.me) 'tail /tmp/ndai.log'"
+# Ensure docker services are running
+docker compose up -d 2>/dev/null || true
+# Start via systemd
+sudo systemctl start ndai
+sleep 2
+curl -sf http://localhost:8000/health > /dev/null && echo "NDAI server running" || echo "Server failed to start — check: journalctl -u ndai"
 APP
 
     echo ""
@@ -130,7 +130,7 @@ APP
 
   logs)
     IP=$(get_ip)
-    ssh $SSH_OPTS "ec2-user@$IP" "tail -50 ~/ndai-hackathon/tmp/ndai.log 2>/dev/null || tail -50 /tmp/ndai.log"
+    ssh $SSH_OPTS "ec2-user@$IP" "sudo journalctl -u ndai -n 50 --no-pager 2>/dev/null || tail -50 /var/log/ndai.log"
     ;;
 
   keepalive)
@@ -151,23 +151,26 @@ APP
     ;;
 
   deploy)
-    # Quick redeploy: sync code + restart
+    # Quick redeploy: sync code, rebuild frontend, run migrations, restart service
     IP=$(get_ip)
     echo "Syncing code..."
     rsync -avz --exclude='.venv' --exclude='node_modules' --exclude='frontend/dist' \
       --exclude='__pycache__' --exclude='.git' --exclude='.env' --exclude='ndai_enclave.eif' \
       -e "ssh $SSH_OPTS" \
       "$(dirname "$(dirname "$0")")/" "ec2-user@$IP:~/ndai-hackathon/" 2>&1 | tail -3
-    echo "Restarting server..."
+    echo "Installing, building, migrating, restarting..."
     ssh $SSH_OPTS "ec2-user@$IP" << 'RESTART'
 cd ndai-hackathon && source .venv/bin/activate
-pip install -e . -q 2>/dev/null
+pip install -e ".[dev]" -q 2>/dev/null
 cd frontend && npm run build 2>&1 | tail -1 && cd ..
-pkill -f uvicorn || true
-sleep 1
-nohup uvicorn ndai.api.app:create_app --factory --host 0.0.0.0 --port 8000 > /tmp/ndai.log 2>&1 &
+# Run database migrations if alembic is configured
+if [ -f alembic.ini ]; then
+  alembic upgrade head 2>&1 | tail -3
+fi
+# Restart via systemd
+sudo systemctl restart ndai
 sleep 2
-curl -sf http://localhost:8000/health > /dev/null && echo "Deployed and running" || echo "Deploy failed"
+curl -sf http://localhost:8000/health > /dev/null && echo "Deployed and running" || echo "Deploy failed — check: journalctl -u ndai"
 RESTART
     ;;
 

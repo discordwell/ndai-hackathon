@@ -11,9 +11,10 @@ from ndai.enclave.agents.base_agent import (
     AgentMessage,
     AgentRole,
     InventionDisclosure,
+    PriceProposal,
 )
 from ndai.enclave.agents.llm_client import LLMClient
-from ndai.enclave.agents.sanitize import escape_for_prompt
+from ndai.enclave.agents.sanitize import escape_for_prompt, wrap_user_data
 
 
 BUYER_TOOLS = [
@@ -47,6 +48,28 @@ BUYER_TOOLS = [
                 },
             },
             "required": ["assessed_value", "strengths", "concerns", "reasoning"],
+        },
+    },
+    {
+        "name": "make_offer",
+        "description": "Make a price offer to the seller's agent during multi-round negotiation.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "proposed_price": {
+                    "type": "number",
+                    "description": "The price you propose to pay. Must be <= your budget cap.",
+                },
+                "explanation": {
+                    "type": "string",
+                    "description": "Explanation visible to the seller's agent.",
+                },
+                "reasoning": {
+                    "type": "string",
+                    "description": "Private reasoning (not shared with seller).",
+                },
+            },
+            "required": ["proposed_price", "explanation", "reasoning"],
         },
     },
 ]
@@ -165,6 +188,57 @@ the seller independently discloses. Both decisions shape the final price."""
             explanation=str(args.get("reasoning", "")),
             private_reasoning=str(args.get("reasoning", "")),
             raw_response=eval_tool,
+        )
+
+    def make_offer(
+        self, disclosure: InventionDisclosure, round_num: int,
+        seller_explanation: str = "",
+    ) -> AgentMessage | None:
+        """Make a price offer to the seller. Returns None if buyer declines to offer."""
+        safe_explanation = wrap_user_data("seller_message", seller_explanation) if seller_explanation else ""
+        self._conversation.append(
+            {
+                "role": "user",
+                "content": (
+                    f"Round {round_num}: Make a price offer for the invention.\n"
+                    f"Your assessed value: {self.assessed_value}\n"
+                    f"Your budget cap: {self.budget_cap}\n"
+                    f"{safe_explanation}\n"
+                    f"Use the make_offer tool to propose a price."
+                ),
+            }
+        )
+
+        response = self.llm.create_message(
+            system=self._system_prompt(disclosure),
+            messages=self._conversation,
+            tools=BUYER_TOOLS,
+            tool_choice={"type": "tool", "name": "make_offer"},
+        )
+
+        tool_use = self.llm.extract_tool_use(response)
+        self._conversation.append({"role": "assistant", "content": response.content})
+
+        if not tool_use:
+            return None
+
+        args = tool_use["input"]
+
+        # HARD CONSTRAINT: proposed_price <= budget_cap and >= 0
+        raw_price = float(args.get("proposed_price", 0))
+        proposed_price = max(0.0, min(raw_price, self.budget_cap))
+
+        return AgentMessage(
+            role=AgentRole.BUYER,
+            round_number=round_num,
+            price_proposal=PriceProposal(
+                proposed_price=proposed_price,
+                reasoning=str(args.get("reasoning", "")),
+                confidence=0.8,
+            ),
+            explanation=str(args.get("explanation", "")),
+            private_reasoning=str(args.get("reasoning", "")),
+            raw_response=tool_use,
         )
 
     def _fallback_evaluation(

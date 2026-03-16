@@ -76,13 +76,18 @@ export interface AgreementParamsRequest {
 export interface NegotiationOutcomeResponse {
   outcome: string;
   final_price: number | null;
-  omega_hat: number | null;
+  reason: string | null;
   negotiation_rounds: number | null;
-  buyer_valuation: number | null;
 }
 
 export interface NegotiationStatusResponse {
   status: "pending" | "running" | "completed" | "error";
   outcome?: NegotiationOutcomeResponse;
   error?: string;
+}
+
+// SSE events
+export interface NegotiationProgressEvent {
+  phase: string;
+  data?: Record<string, unknown>;
 }

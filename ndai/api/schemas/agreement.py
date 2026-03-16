@@ -28,3 +28,4 @@ class NegotiationOutcomeResponse(BaseModel):
     outcome: str
     final_price: float | None
     reason: str | None = None
+    negotiation_rounds: int | None = None

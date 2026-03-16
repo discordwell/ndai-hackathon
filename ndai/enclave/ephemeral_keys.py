@@ -23,7 +23,7 @@ import os
 from dataclasses import dataclass
 
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, utils
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
@@ -63,6 +63,34 @@ def generate_keypair() -> EnclaveKeypair:
         public_key=public_key,
         public_key_der=public_key_der,
     )
+
+
+def sign_data(private_key: ec.EllipticCurvePrivateKey, data: bytes) -> bytes:
+    """Sign data using P-384 ECDSA.
+
+    Args:
+        private_key: The enclave's P-384 private key.
+        data: Bytes to sign.
+
+    Returns:
+        DER-encoded ECDSA signature.
+    """
+    return private_key.sign(data, ec.ECDSA(hashes.SHA384()))
+
+
+def verify_signature(
+    public_key: ec.EllipticCurvePublicKey, signature: bytes, data: bytes
+) -> bool:
+    """Verify a P-384 ECDSA signature.
+
+    Returns:
+        True if valid, False otherwise.
+    """
+    try:
+        public_key.verify(signature, data, ec.ECDSA(hashes.SHA384()))
+        return True
+    except Exception:
+        return False
 
 
 def _ecdh_derive_key(

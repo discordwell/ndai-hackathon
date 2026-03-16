@@ -74,7 +74,7 @@ def negotiation_config(invention, security_params, enclave_config):
         invention=invention,
         budget_cap=0.6,
         security_params=security_params,
-        max_rounds=3,
+        max_rounds=1,
         anthropic_api_key="test-key-not-real",
         anthropic_model="claude-sonnet-4-20250514",
         enclave_config=enclave_config,
@@ -274,7 +274,7 @@ class TestNegotiationLifecycle:
                 invention=invention,
                 budget_cap=0.6,
                 security_params=security_params,
-                max_rounds=3,
+                max_rounds=1,
                 anthropic_api_key="test-key",
                 anthropic_model="claude-sonnet-4-20250514",
             )
@@ -306,7 +306,7 @@ class TestNegotiationLifecycle:
                 invention=invention,
                 budget_cap=0.01,  # Very low budget
                 security_params=security_params,
-                max_rounds=3,
+                max_rounds=1,
                 anthropic_api_key="test-key",
             )
 
@@ -426,7 +426,7 @@ class TestNegotiationTimeout:
                 invention=invention,
                 budget_cap=0.6,
                 security_params=security_params,
-                max_rounds=2,  # Very low limit
+                max_rounds=1,  # Single-round (mock only provides 2 responses)
                 anthropic_api_key="test-key",
             )
 
@@ -523,7 +523,7 @@ class TestMultipleNegotiations:
                     invention=invention,
                     budget_cap=budget,
                     security_params=security_params,
-                    max_rounds=2,
+                    max_rounds=1,
                     anthropic_api_key="test-key",
                 )
                 with _patch_llm_for_full_negotiation():

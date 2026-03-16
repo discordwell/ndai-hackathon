@@ -122,7 +122,7 @@ class TestFullNegotiation:
             invention=invention,
             budget_cap=1.0,
             security_params=security_params,
-            max_rounds=5,
+            max_rounds=1,
             anthropic_api_key="test-key",
         )
         session = NegotiationSession(config)
@@ -148,6 +148,7 @@ class TestFullNegotiation:
             invention=invention,
             budget_cap=1.0,
             security_params=security_params,
+            max_rounds=1,
             anthropic_api_key="test-key",
         )
         session = NegotiationSession(config)
@@ -172,6 +173,7 @@ class TestFullNegotiation:
             invention=invention,
             budget_cap=0.01,  # Very low budget
             security_params=security_params,
+            max_rounds=1,
             anthropic_api_key="test-key",
         )
         session = NegotiationSession(config)
@@ -189,6 +191,7 @@ class TestFullNegotiation:
             invention=invention,
             budget_cap=1.0,
             security_params=security_params,
+            max_rounds=1,
             anthropic_api_key="test-key",
         )
         session = NegotiationSession(config)
@@ -209,6 +212,7 @@ class TestFullNegotiation:
             invention=invention,
             budget_cap=1.0,
             security_params=security_params,
+            max_rounds=1,
             anthropic_api_key="test-key",
         )
         session = NegotiationSession(config)
@@ -230,6 +234,7 @@ class TestFullNegotiation:
             invention=invention,
             budget_cap=1.0,
             security_params=security_params,
+            max_rounds=1,
             anthropic_api_key="test-key",
         )
 

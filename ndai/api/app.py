@@ -1,6 +1,8 @@
 """FastAPI application factory."""
 
+import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -12,12 +14,26 @@ from ndai.api.routers import agreements, auth, inventions, negotiations
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize and tear down the DB engine."""
+    from ndai.db.session import engine
+
+    logger.info("NDAI starting up (database=%s)", engine.url.database)
+    yield
+    await engine.dispose()
+    logger.info("NDAI shutting down")
+
 
 def create_app() -> FastAPI:
     app = FastAPI(
         title="NDAI",
         description="Non-Disclosure via AI Agents and Trusted Execution Environments",
         version="0.1.0",
+        lifespan=lifespan,
     )
 
     app.add_middleware(

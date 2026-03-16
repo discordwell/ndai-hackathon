@@ -13,7 +13,7 @@ export function OutcomeDisplay({
 
   return (
     <Card
-      className={`border-2 ${
+      className={`border-2 transition-all duration-500 ${
         isAgreement
           ? "border-green-200 bg-green-50/30"
           : isNoDeal
@@ -38,15 +38,20 @@ export function OutcomeDisplay({
         </p>
       </div>
 
-      {isAgreement &&
-        outcome.final_price !== null &&
-        outcome.omega_hat !== null && (
-          <PriceBreakdown
-            finalPrice={outcome.final_price}
-            omegaHat={outcome.omega_hat}
-            buyerValuation={outcome.buyer_valuation ?? null}
-          />
-        )}
+      {isAgreement && outcome.final_price !== null && (
+        <PriceBreakdown
+          finalPrice={outcome.final_price}
+          reason={outcome.reason}
+          rounds={outcome.negotiation_rounds}
+        />
+      )}
+
+      {/* human-requested: show reason text for all outcomes */}
+      {!isAgreement && outcome.reason && (
+        <div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm text-gray-600">
+          {outcome.reason}
+        </div>
+      )}
     </Card>
   );
 }

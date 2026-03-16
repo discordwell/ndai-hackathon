@@ -60,7 +60,14 @@ Both agents' decisions affect the final price. The seller controls `ω̂` (discl
 | Nitro Root Cert | `ndai/tee/nitro_root_cert.py` | Bundled AWS Nitro Attestation PKI root CA |
 | FastAPI Backend | `ndai/api/` | REST API for inventions, agreements, negotiations |
 | Frontend | `frontend/` | React 19 + TypeScript + Tailwind, esbuild-bundled SPA |
-| ORM Models | `ndai/models/` | SQLAlchemy models for users, inventions, agreements, payments |
+| ORM Models | `ndai/models/` | SQLAlchemy models for users, inventions, agreements, payments, audit |
+| Repository Layer | `ndai/db/repositories.py` | Async CRUD functions for all models |
+| Alembic Migrations | `alembic/` | Database schema versioning (async PostgreSQL) |
+| Transcript Chain | `ndai/enclave/transcript.py` | SHA-256 hash chain for tamper-evident transcripts |
+| Audit Service | `ndai/services/audit.py` | Event logging for agreement lifecycle |
+| Transparency API | `ndai/api/schemas/transparency.py` | Verifiable transparency report schema |
+| Deploy Scripts | `deploy/` | Systemd, nginx, Docker Compose, smoke test |
+| Wet Test Harness | `scripts/wet_test.py` | Automated real-LLM negotiation testing |
 
 ## Data Flow
 

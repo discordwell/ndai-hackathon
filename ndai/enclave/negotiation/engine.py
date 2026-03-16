@@ -76,6 +76,7 @@ class NegotiationResult:
     seller_payoff: float | None  # P + alpha_0 * (omega - omega_hat)
     buyer_payoff: float | None  # v_b - P (buyer's perceived surplus)
     buyer_valuation: float | None = None  # v_b: buyer's independent assessment
+    negotiation_rounds: int = 1
     reason: str = ""
 
 

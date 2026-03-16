@@ -66,11 +66,12 @@ class NegotiationSession:
     4. Bilateral Nash bargaining: P* = (v_b + alpha_0 * omega_hat) / 2
     """
 
-    def __init__(self, config: SessionConfig):
+    def __init__(self, config: SessionConfig, progress_callback=None):
         self.config = config
         self.phi = security_capacity(config.security_params)
         self.theta = compute_theta(config.invention.outside_option_value)
         self.transcript = SessionTranscript()
+        self._progress_callback = progress_callback
 
         # Resolve API key and model: prefer generic fields, fall back to legacy
         api_key = config.api_key or config.anthropic_api_key
@@ -99,6 +100,12 @@ class NegotiationSession:
     def run(self) -> NegotiationResult:
         """Execute the full negotiation protocol.
 
+        Flow:
+        1. Seller disclosure (omega_hat)
+        2. Buyer evaluation (v_b)
+        3. If max_rounds > 1 and deal is viable: multi-round offer/counter loop
+        4. Final bilateral Nash resolution as backstop
+
         Returns the final NegotiationResult.
         """
         # Always compute the deterministic (unilateral) result for audit comparison
@@ -111,8 +118,12 @@ class NegotiationSession:
             )
         )
 
+        omega = self.config.invention.self_assessed_value
+        alpha_0 = self.config.invention.outside_option_value
+
         # Phase 1: Seller disclosure → omega_hat (1 API call)
         logger.info("Phase 1: Seller agent deciding disclosure")
+        self._emit_progress("seller_disclosure", {})
         disclosure_msg = self.seller_agent.decide_disclosure()
         self.transcript.messages.append(disclosure_msg)
 
@@ -124,6 +135,7 @@ class NegotiationSession:
 
         # Phase 2: Buyer evaluation → v_b (1 API call)
         logger.info("Phase 2: Buyer agent evaluating disclosure")
+        self._emit_progress("buyer_evaluation", {})
         buyer_msg = self.buyer_agent.evaluate_disclosure(
             disclosure_msg.disclosure, round_num=1
         )
@@ -135,49 +147,88 @@ class NegotiationSession:
 
         logger.info(f"Buyer assessed value v_b={v_b:.4f}")
 
-        # Phase 3: Bilateral Nash bargaining resolution
-        omega = self.config.invention.self_assessed_value
-        alpha_0 = self.config.invention.outside_option_value
-
-        # Check deal viability: v_b >= alpha_0 * omega_hat
+        # Check deal viability before entering negotiation
         if not check_deal_viability(v_b, alpha_0, omega_hat):
-            result = NegotiationResult(
-                outcome=NegotiationOutcomeType.NO_DEAL,
-                final_price=None,
-                omega_hat=omega_hat,
-                theta=self.theta,
-                phi=self.phi,
-                seller_payoff=None,
-                buyer_payoff=None,
-                buyer_valuation=v_b,
-                reason=(
-                    f"No surplus: buyer valuation {v_b:.4f} "
-                    f"< seller reservation {alpha_0 * omega_hat:.4f}"
-                ),
+            return self._no_deal_result(
+                omega_hat, v_b,
+                f"No surplus: buyer valuation {v_b:.4f} "
+                f"< seller reservation {alpha_0 * omega_hat:.4f}",
             )
-            self.transcript.result = result
-            logger.info(f"Negotiation complete: {result.outcome.value}")
-            return result
 
-        # Compute bilateral price: P* = (v_b + alpha_0 * omega_hat) / 2
-        price = compute_bilateral_price(alpha_0, omega_hat, v_b)
+        # Phase 3: Multi-round negotiation (if enabled)
+        rounds_completed = 1
+        candidate_price = None
+
+        if self.config.max_rounds > 1:
+            self._emit_progress("nash_resolution", {})
+            for round_num in range(2, self.config.max_rounds + 1):
+                self._emit_progress("round", {"number": round_num, "phase": "buyer_offer"})
+                logger.info(f"Round {round_num}: Buyer making offer")
+
+                # Buyer makes offer
+                seller_explanation = ""
+                if len(self.transcript.messages) > 0:
+                    last = self.transcript.messages[-1]
+                    seller_explanation = last.explanation or ""
+
+                buyer_offer = self.buyer_agent.make_offer(
+                    disclosure_msg.disclosure, round_num,
+                    seller_explanation=seller_explanation,
+                )
+                if not buyer_offer or not buyer_offer.price_proposal:
+                    logger.info(f"Round {round_num}: Buyer declined to offer, breaking")
+                    break
+                self.transcript.messages.append(buyer_offer)
+
+                offered_price = buyer_offer.price_proposal.proposed_price
+                logger.info(f"Round {round_num}: Buyer offers {offered_price:.4f}")
+
+                # Seller evaluates offer
+                self._emit_progress("round", {"number": round_num, "phase": "seller_response"})
+                seller_response = self.seller_agent.evaluate_offer(
+                    offered_price,
+                    buyer_offer.explanation or "",
+                    round_num,
+                )
+                self.transcript.messages.append(seller_response)
+
+                # Check seller's response
+                if seller_response.raw_response:
+                    action = seller_response.raw_response.get("input", {}).get("action", "accept")
+                else:
+                    action = "accept"
+
+                self._emit_progress("round", {"number": round_num, "phase": "seller_response", "action": action})
+                logger.info(f"Round {round_num}: Seller action={action}")
+
+                if action == "accept":
+                    candidate_price = offered_price
+                    rounds_completed = round_num
+                    break
+                elif action == "reject":
+                    rounds_completed = round_num
+                    break
+                # action == "counter" → continue to next round
+
+                rounds_completed = round_num
+
+        # Phase 4: Final resolution
+        self._emit_progress("nash_resolution", {})
+
+        # If multi-round produced an accepted price, use it
+        if candidate_price is not None:
+            price = candidate_price
+        else:
+            # Fall back to bilateral Nash backstop
+            price = compute_bilateral_price(alpha_0, omega_hat, v_b)
 
         # Check budget cap
         if not check_budget_cap(price, self.config.budget_cap):
-            result = NegotiationResult(
-                outcome=NegotiationOutcomeType.NO_DEAL,
-                final_price=None,
-                omega_hat=omega_hat,
-                theta=self.theta,
-                phi=self.phi,
-                seller_payoff=None,
-                buyer_payoff=None,
-                buyer_valuation=v_b,
-                reason=f"Price {price:.4f} exceeds budget {self.config.budget_cap}",
+            return self._no_deal_result(
+                omega_hat, v_b,
+                f"Price {price:.4f} exceeds budget {self.config.budget_cap}",
+                rounds=rounds_completed,
             )
-            self.transcript.result = result
-            logger.info(f"Negotiation complete: {result.outcome.value}")
-            return result
 
         seller_payoff = compute_seller_payoff(price, alpha_0, omega, omega_hat)
         buyer_payoff = v_b - price
@@ -191,12 +242,40 @@ class NegotiationSession:
             seller_payoff=seller_payoff,
             buyer_payoff=buyer_payoff,
             buyer_valuation=v_b,
+            negotiation_rounds=rounds_completed,
             reason="Bilateral Nash bargaining equilibrium reached",
         )
 
         self.transcript.result = result
+        logger.info(f"Negotiation complete: {result.outcome.value} in {rounds_completed} rounds")
+        return result
+
+    def _no_deal_result(
+        self, omega_hat: float, v_b: float, reason: str, rounds: int = 1
+    ) -> NegotiationResult:
+        result = NegotiationResult(
+            outcome=NegotiationOutcomeType.NO_DEAL,
+            final_price=None,
+            omega_hat=omega_hat,
+            theta=self.theta,
+            phi=self.phi,
+            seller_payoff=None,
+            buyer_payoff=None,
+            buyer_valuation=v_b,
+            negotiation_rounds=rounds,
+            reason=reason,
+        )
+        self.transcript.result = result
         logger.info(f"Negotiation complete: {result.outcome.value}")
         return result
+
+    def _emit_progress(self, phase: str, data: dict):
+        """Emit a progress event if a callback is registered."""
+        if self._progress_callback:
+            try:
+                self._progress_callback(phase, data)
+            except Exception:
+                logger.warning("Progress callback failed for phase=%s", phase)
 
     def _error_result(self, reason: str) -> NegotiationResult:
         omega_hat = self.seller_agent.disclosed_omega_hat or 0.0

@@ -62,6 +62,15 @@
 - Fail-closed: Nitro mode now raises OrchestrationError if attestation lacks public key (was silently falling back to plaintext proxy), _start_llm_proxy guards against Nitro usage
 - 353 tests passing (38 new: prompt injection sanitization, result stripping, fail-closed orchestrator, adversarial agent prompts)
 
+### 2026-03-16T20:30Z — Phases 7-12: Deploy, DB, Frontend, Multi-Round, Audit, Wet Test
+- **Phase 7 (Deploy)**: Added ports 80/443 to SG, systemd service (`deploy/ndai.service`), nginx reverse proxy (`deploy/nginx.conf`), hardened `setup.sh` (docker compose, pg_isready, migrations, systemd), smoke test script, updated `ndai-ctl.sh` deploy command to use systemd+alembic
+- **Phase 8 (DB Persistence)**: Extended Invention model with 10 negotiation fields, initialized Alembic (async env.py), created repository layer (`ndai/db/repositories.py`), wired all 4 routers to async SQLAlchemy (replaced `_users`, `_inventions`, `_agreements`, `_outcomes` dicts), added DB lifecycle to app.py, fixed test cleanup (module-scoped TestClient + raw asyncpg truncation). Docker Compose on port 5433 (5432 was in use by another project).
+- **Phase 9 (Frontend)**: Fixed NegotiationOutcomeResponse types (removed omega_hat/buyer_valuation, added reason/negotiation_rounds), added SSE endpoint (`/stream`), progress_callback to NegotiationSession, SSE hook (`useNegotiationStream.ts`), NegotiationProgress step indicator, simplified PriceBreakdown, wired BuyerAgreementDetailPage to SSE+progress
+- **Phase 10 (Multi-Round)**: Added `make_offer` tool to buyer agent, multi-round loop in session.py (buyer offers → seller responds → accept/counter/reject), budget cap clamping on buyer offers, `negotiation_rounds` field in NegotiationResult + API schema, 4 new multi-round tests. Updated existing test fixtures to `max_rounds=1` for backward compat.
+- **Phase 11 (Audit)**: Transcript hash chain (`ndai/enclave/transcript.py`), ECDSA sign/verify in ephemeral_keys, audit event service (`ndai/services/audit.py`), transparency report schema + API endpoint, audit-log endpoint, audit events on agreement_created/params_set/delegation_confirmed/negotiation_started/negotiation_completed. 15 new tests.
+- **Phase 12 (Wet Test)**: Created `scripts/wet_test.py` harness with 5 scenarios (quantum crypto, drug discovery, low value, high budget, adversarial injection), automated polling, reasonableness checks, audit log verification.
+- **Total: 382 tests passing** (363 → 382), frontend builds clean, Alembic migrations applied.
+
 ## Key Findings
 
 - Paper's acceptance threshold: seller accepts if P >= alpha_0 * omega_hat (derived from P + alpha_0*(omega-omega_hat) >= alpha_0*omega)

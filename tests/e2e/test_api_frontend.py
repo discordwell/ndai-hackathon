@@ -1,35 +1,56 @@
-"""Tests for Phase 5: API changes + frontend static serving."""
+"""Tests for API changes + frontend static serving."""
 
+import asyncio
+
+import asyncpg
 import pytest
 from fastapi.testclient import TestClient
 
 from ndai.api.app import create_app
-from ndai.api.routers.auth import _users
-from ndai.api.routers.inventions import _inventions
-from ndai.api.routers.agreements import _agreements
-from ndai.api.routers.negotiations import _outcomes, _statuses
+from ndai.api.routers.negotiations import _statuses
+
+# Direct asyncpg connection for test cleanup (avoids SQLAlchemy event loop conflicts)
+_DB_URL = "postgresql://ndai:ndai@localhost:5433/ndai"
+_TRUNCATE_SQL = """
+TRUNCATE TABLE agreement_outcomes, audit_log, payments, agreements, inventions, users CASCADE;
+"""
+
+
+def _clean_db():
+    """Truncate all tables using a fresh asyncpg connection."""
+    async def _truncate():
+        conn = await asyncpg.connect(_DB_URL)
+        try:
+            await conn.execute(_TRUNCATE_SQL)
+        finally:
+            await conn.close()
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(_truncate())
+    finally:
+        loop.close()
+
+
+# Module-scoped app and client to avoid event loop recreation between tests
+@pytest.fixture(scope="module")
+def app():
+    return create_app()
+
+
+@pytest.fixture(scope="module")
+def client(app):
+    with TestClient(app) as c:
+        yield c
 
 
 @pytest.fixture(autouse=True)
 def clean_stores():
-    """Clear all in-memory stores between tests."""
-    _users.clear()
-    _inventions.clear()
-    _agreements.clear()
-    _outcomes.clear()
+    """Clear DB tables and in-memory stores between tests."""
     _statuses.clear()
+    _clean_db()
     yield
-    _users.clear()
-    _inventions.clear()
-    _agreements.clear()
-    _outcomes.clear()
     _statuses.clear()
-
-
-@pytest.fixture
-def client():
-    app = create_app()
-    return TestClient(app)
 
 
 @pytest.fixture
@@ -126,7 +147,6 @@ class TestStaticServing:
     def test_spa_catch_all_returns_html(self, client):
         res = client.get("/some/random/path")
         assert res.status_code == 200
-        # Should return index.html content
         assert "NDAI" in res.text
 
     def test_health_still_works(self, client):
@@ -165,7 +185,6 @@ class TestFullSellerBuyerFlow:
         assert data["status"] == "active"
 
     def test_buyer_sees_listings(self, client, seller_token):
-        # Seller creates invention
         client.post(
             "/api/v1/inventions/",
             headers=auth(seller_token),
@@ -179,7 +198,6 @@ class TestFullSellerBuyerFlow:
                 "outside_option_value": 0.2,
             },
         )
-        # Anyone can see listings (no auth)
         res = client.get("/api/v1/inventions/listings")
         assert res.status_code == 200
         listings = res.json()
@@ -187,7 +205,6 @@ class TestFullSellerBuyerFlow:
         assert listings[0]["title"] == "Visible Invention"
 
     def test_buyer_creates_agreement(self, client, seller_token, buyer_token):
-        # Seller creates invention
         inv = client.post(
             "/api/v1/inventions/",
             headers=auth(seller_token),
@@ -202,7 +219,6 @@ class TestFullSellerBuyerFlow:
             },
         ).json()
 
-        # Buyer creates agreement
         res = client.post(
             "/api/v1/agreements/",
             headers=auth(buyer_token),
@@ -214,7 +230,6 @@ class TestFullSellerBuyerFlow:
         assert agreement["invention_id"] == inv["id"]
 
     def test_agreement_params_and_confirm(self, client, seller_token, buyer_token):
-        # Create invention + agreement
         inv = client.post(
             "/api/v1/inventions/",
             headers=auth(seller_token),
@@ -234,7 +249,6 @@ class TestFullSellerBuyerFlow:
             json={"invention_id": inv["id"], "budget_cap": 0.9},
         ).json()
 
-        # Set params
         res = client.post(
             f"/api/v1/agreements/{agr['id']}/params",
             headers=auth(buyer_token),
@@ -243,9 +257,8 @@ class TestFullSellerBuyerFlow:
         assert res.status_code == 200
         data = res.json()
         assert data["alpha_0"] == 0.25
-        assert data["theta"] == pytest.approx(0.625)  # (1 + 0.25) / 2
+        assert data["theta"] == pytest.approx(0.625)
 
-        # Confirm
         res = client.post(
             f"/api/v1/agreements/{agr['id']}/confirm",
             headers=auth(buyer_token),
@@ -281,7 +294,7 @@ class TestFullSellerBuyerFlow:
 
     def test_negotiation_outcome_404_before_start(self, client, buyer_token):
         res = client.get(
-            "/api/v1/negotiations/nonexistent/outcome",
+            "/api/v1/negotiations/00000000-0000-0000-0000-000000000000/outcome",
             headers=auth(buyer_token),
         )
         assert res.status_code == 404
@@ -291,7 +304,6 @@ class TestNegotiationStatusEndpoint:
     """Test the new status polling endpoint."""
 
     def test_status_returns_pending_on_start(self, client, seller_token, buyer_token):
-        # Set up invention + agreement
         inv = client.post(
             "/api/v1/inventions/",
             headers=auth(seller_token),
@@ -313,8 +325,6 @@ class TestNegotiationStatusEndpoint:
             json={"invention_id": inv["id"], "budget_cap": 0.8},
         ).json()
 
-        # Start negotiation — this won't actually run the LLM in tests
-        # (no API key), but it should at least set status to pending
         res = client.post(
             f"/api/v1/negotiations/{agr['id']}/start",
             headers=auth(buyer_token),

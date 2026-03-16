@@ -5,15 +5,21 @@ import { Card } from "../../components/shared/Card";
 import { LoadingSpinner } from "../../components/shared/LoadingSpinner";
 import { StatusBadge } from "../../components/shared/StatusBadge";
 import { OutcomeDisplay } from "../../components/negotiation/OutcomeDisplay";
+import { NegotiationProgress } from "../../components/negotiation/NegotiationProgress";
+import { useNegotiationStream } from "../../hooks/useNegotiationStream";
+import { useAuth } from "../../contexts/AuthContext";
 import type { AgreementResponse, NegotiationStatusResponse } from "../../api/types";
 
 export function BuyerAgreementDetailPage({ id }: { id: string }) {
+  const { token } = useAuth();
   const [agreement, setAgreement_] = useState<AgreementResponse | null>(null);
   const [negStatus, setNegStatus] = useState<NegotiationStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState("");
   const [alpha0, setAlpha0] = useState("0.3");
+
+  const { phase, isComplete, connect: connectSSE } = useNegotiationStream(id, token || "");
 
   async function load() {
     try {
@@ -37,6 +43,13 @@ export function BuyerAgreementDetailPage({ id }: { id: string }) {
   useEffect(() => {
     load();
   }, [id]);
+
+  // Refresh when SSE signals completion
+  useEffect(() => {
+    if (isComplete) {
+      load();
+    }
+  }, [isComplete]);
 
   async function handleSetParams() {
     setActionLoading(true);
@@ -70,7 +83,9 @@ export function BuyerAgreementDetailPage({ id }: { id: string }) {
     try {
       const status = await startNegotiation(id);
       setNegStatus(status);
-      // Poll for completion
+      // Connect SSE for real-time progress
+      connectSSE();
+      // Also poll as fallback
       if (status.status === "pending" || status.status === "running") {
         pollStatus();
       }
@@ -83,12 +98,12 @@ export function BuyerAgreementDetailPage({ id }: { id: string }) {
 
   async function pollStatus() {
     let retries = 0;
-    const maxRetries = 60; // 2 minutes max polling
+    const maxRetries = 60;
     const poll = async () => {
       try {
         const s = await getNegotiationStatus(id);
         setNegStatus(s);
-        retries = 0; // reset on success
+        retries = 0;
         if (s.status === "pending" || s.status === "running") {
           setTimeout(poll, 2000);
         } else {
@@ -149,25 +164,24 @@ export function BuyerAgreementDetailPage({ id }: { id: string }) {
           <div>
             <span className="text-gray-500">Budget Cap</span>
             <div className="mt-1 font-medium">
-              {agreement.budget_cap?.toFixed(2) ?? "—"}
+              {agreement.budget_cap?.toFixed(2) ?? "\u2014"}
             </div>
           </div>
           <div>
             <span className="text-gray-500">Theta</span>
             <div className="mt-1 font-medium">
-              {agreement.theta?.toFixed(3) ?? "—"}
+              {agreement.theta?.toFixed(3) ?? "\u2014"}
             </div>
           </div>
           <div>
             <span className="text-gray-500">Alpha-0</span>
             <div className="mt-1 font-medium">
-              {agreement.alpha_0?.toFixed(2) ?? "—"}
+              {agreement.alpha_0?.toFixed(2) ?? "\u2014"}
             </div>
           </div>
         </div>
       </Card>
 
-      {/* Actions based on state */}
       {canSetParams && (
         <Card className="mb-6">
           <h3 className="font-semibold mb-3">Set Negotiation Parameters</h3>
@@ -233,14 +247,10 @@ export function BuyerAgreementDetailPage({ id }: { id: string }) {
 
       {isNegotiating && (
         <Card className="mb-6">
-          <div className="flex items-center gap-3">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-ndai-600" />
-            <div>
-              <div className="font-medium">Negotiation in progress...</div>
-              <div className="text-sm text-gray-500">
-                AI agents are negotiating inside the TEE
-              </div>
-            </div>
+          <div className="font-medium mb-2">Negotiation in progress...</div>
+          <NegotiationProgress phase={phase} />
+          <div className="text-sm text-gray-500 mt-2">
+            AI agents are negotiating inside the TEE
           </div>
         </Card>
       )}

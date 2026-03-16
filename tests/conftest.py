@@ -1,6 +1,14 @@
 """Shared test fixtures."""
 
+import os
+
 import pytest
+
+# Ensure test database URL is set before any imports of ndai.config
+os.environ.setdefault(
+    "DATABASE_URL",
+    "postgresql+asyncpg://ndai:ndai@localhost:5433/ndai",
+)
 
 
 @pytest.fixture
