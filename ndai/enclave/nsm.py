@@ -133,7 +133,15 @@ class NSMDevice:
     def _ioctl_request(self, request_cbor: bytes) -> bytes:
         """Send a CBOR request to the NSM device via ioctl.
 
-        The NSM ioctl uses a buffer structure:
+        TODO(hardware-validation): This buffer layout must be validated against
+        the actual NSM kernel driver on real Nitro hardware. The real driver
+        uses a struct nsm_message with iovec-like pointer fields, not a flat
+        buffer. The ioctl command number computation also needs to match the
+        driver's sizeof(struct nsm_message). Validate against aws-nitro-enclaves-
+        sdk-c (nsm-lib) or the Rust aws-nitro-enclaves-nsm-api crate before
+        deploying to production.
+
+        Current layout (needs hardware verification):
             - 4 bytes: request length (little-endian u32)
             - 4 bytes: response length (little-endian u32)
             - request_cbor bytes

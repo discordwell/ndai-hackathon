@@ -257,6 +257,7 @@ class EnclaveOrchestrator:
         enclave_config = config.enclave_config or self._default_enclave_config()
         identity: EnclaveIdentity | None = None
         tunnel = None
+        proxy = None
         start_time = time.monotonic()
 
         try:
@@ -387,6 +388,13 @@ class EnclaveOrchestrator:
             ) from exc
         finally:
             # Step 9: Always clean up
+            if proxy is not None:
+                try:
+                    await proxy.stop()
+                    logger.info("LLM proxy stopped")
+                except Exception as proxy_exc:
+                    logger.warning("Failed to stop LLM proxy: %s", proxy_exc)
+
             if tunnel is not None:
                 try:
                     await tunnel.stop()

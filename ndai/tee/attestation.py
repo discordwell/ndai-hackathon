@@ -320,7 +320,6 @@ def _verify_cose_signature(
     from cryptography import x509
     from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives.asymmetric import ec
-    from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
     from cryptography.hazmat.primitives import hashes
 
     from ndai.tee.nitro_root_cert import get_root_certificate
@@ -379,8 +378,8 @@ def _verify_cose_signature(
 
 
 def _verify_cert_chain(
-    chain: list,
-    root_cert,
+    chain: "list[x509.Certificate]",
+    root_cert: "x509.Certificate",
 ) -> str | None:
     """Verify a certificate chain against the root CA.
 
@@ -388,16 +387,39 @@ def _verify_cert_chain(
     chain must be signed by the root CA, and each subsequent cert must
     be signed by the previous one.
 
+    Checks performed per certificate:
+    - Signature verification against issuer's public key
+    - Issuer DN matches the signing certificate's subject DN
+    - Certificate is within its validity period (not_valid_before / not_valid_after)
+
     Returns:
         None if valid, error string otherwise.
     """
+    import datetime
+
     from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives.asymmetric import ec, rsa, padding
     from cryptography.hazmat.primitives import hashes
 
+    now = datetime.datetime.now(datetime.timezone.utc)
+
     # Verify first cert is signed by the root
     issuer_cert = root_cert
     for i, cert in enumerate(chain):
+        # Check issuer DN matches the signing cert's subject DN
+        if cert.issuer != issuer_cert.subject:
+            return (
+                f"Certificate chain issuer DN mismatch at position {i}: "
+                f"cert issuer={cert.issuer}, expected={issuer_cert.subject}"
+            )
+
+        # Check certificate validity period
+        if now < cert.not_valid_before_utc:
+            return f"Certificate at position {i} is not yet valid (starts {cert.not_valid_before_utc})"
+        if now > cert.not_valid_after_utc:
+            return f"Certificate at position {i} has expired (ended {cert.not_valid_after_utc})"
+
+        # Verify signature
         issuer_key = issuer_cert.public_key()
         try:
             if isinstance(issuer_key, ec.EllipticCurvePublicKey):

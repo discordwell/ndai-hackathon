@@ -67,6 +67,7 @@ class EnclaveState:
         self.keypair = None  # EnclaveKeypair, set on startup
         self.api_key: str | None = None  # Decrypted API key, set via deliver_key
         self.nitro_mode: bool = False  # True when real NSM is available
+        self.nsm_stub = None  # Cached NSMStub instance for dev mode
 
     def initialize(self):
         """Generate ephemeral keypair and detect NSM availability."""
@@ -379,7 +380,10 @@ def _handle_attestation_stub(
     try:
         from ndai.enclave.nsm_stub import NSMStub
 
-        stub = NSMStub()
+        # Cache the stub so consecutive attestation requests use the same signing key
+        if _state.nsm_stub is None:
+            _state.nsm_stub = NSMStub()
+        stub = _state.nsm_stub
         attestation_doc = stub.get_attestation(
             public_key=public_key_der,
             nonce=nonce,
@@ -434,12 +438,8 @@ def _handle_deliver_key(request: dict[str, Any]) -> dict[str, Any]:
             encrypted_payload,
         )
 
-        # Log success without revealing the key
-        logger.info(
-            "API key delivered successfully (%d chars, starts with %s...)",
-            len(_state.api_key),
-            _state.api_key[:7] if len(_state.api_key) > 7 else "***",
-        )
+        # Log success without revealing any part of the key
+        logger.info("API key delivered successfully (%d chars)", len(_state.api_key))
         return {"status": "ok"}
 
     except Exception as exc:

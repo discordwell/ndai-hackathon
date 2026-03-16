@@ -20,7 +20,6 @@ This module provides:
 import logging
 import socket
 import ssl
-import struct
 from typing import Any
 
 import httpx
@@ -35,11 +34,6 @@ TUNNEL_PORT = 5002
 
 class TunnelError(Exception):
     """Error establishing or using the tunnel."""
-
-
-class TunnelSocketStream(httpx._transports.default.ResponseStream):
-    """Adapter that wraps a raw socket into httpx's stream interface."""
-    pass
 
 
 class TunnelConnection:

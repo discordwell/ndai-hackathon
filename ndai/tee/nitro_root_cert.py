@@ -7,7 +7,7 @@ attestation documents (COSE Sign1 → cabundle → this root).
 Source: https://aws-nitro-enclaves.amazonaws.com/AWS_NitroEnclaves_Root-G1.zip
 SHA-256 of the PEM: verified against AWS documentation.
 
-The root CA is an RSA-2048 certificate valid until 2049-10-28.
+The root CA is an EC P-384 (secp384r1) certificate valid until 2049-10-28.
 """
 
 # AWS Nitro Enclaves Root CA (G1)

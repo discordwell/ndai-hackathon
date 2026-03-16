@@ -113,7 +113,7 @@ class TestVerifyCertChain:
         tampered_chain = [rogue_cert, chain_certs[1], chain_certs[2]]
         result = _verify_cert_chain(tampered_chain, root_cert)
         assert result is not None
-        assert "failed" in result.lower()
+        assert "mismatch" in result.lower() or "failed" in result.lower()
 
     def test_single_cert_chain(self):
         """A single self-signed cert should verify if it matches root."""
