@@ -507,8 +507,11 @@ class TestNegotiationEngineIntegration:
             assert result.final_price is not None
             assert result.seller_payoff is not None
             assert result.buyer_payoff is not None
-            # buyer_payoff = omega_hat - P
-            assert abs(result.buyer_payoff - (result.omega_hat - result.final_price)) < 1e-9
+            # buyer_payoff = v_b - P (bilateral) or omega_hat - P (unilateral fallback)
+            if result.buyer_valuation is not None:
+                assert abs(result.buyer_payoff - (result.buyer_valuation - result.final_price)) < 1e-9
+            else:
+                assert abs(result.buyer_payoff - (result.omega_hat - result.final_price)) < 1e-9
 
 
 # ---------------------------------------------------------------------------

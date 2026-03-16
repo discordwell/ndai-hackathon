@@ -19,9 +19,10 @@ from ndai.enclave.negotiation.engine import (
     NegotiationParams,
     NegotiationResult,
     SecurityParams,
-    check_acceptance_threshold,
     check_budget_cap,
-    compute_equilibrium_price,
+    check_deal_viability,
+    compute_bilateral_price,
+    compute_seller_payoff,
     compute_theta,
     resolve_negotiation,
     security_capacity,
@@ -60,10 +61,9 @@ class NegotiationSession:
 
     Flow:
     1. Compute security parameters (Phi, theta)
-    2. Seller agent decides disclosure (omega_hat)
-    3. Buyer agent evaluates and makes offer
-    4. Multi-round negotiation (if needed)
-    5. Deterministic Nash bargaining resolution
+    2. Seller agent decides disclosure (omega_hat) — 1 API call
+    3. Buyer agent evaluates (v_b) — 1 API call
+    4. Bilateral Nash bargaining: P* = (v_b + alpha_0 * omega_hat) / 2
     """
 
     def __init__(self, config: SessionConfig):
@@ -101,7 +101,7 @@ class NegotiationSession:
 
         Returns the final NegotiationResult.
         """
-        # Always compute the deterministic result first
+        # Always compute the deterministic (unilateral) result for audit comparison
         self.transcript.deterministic_result = resolve_negotiation(
             NegotiationParams(
                 omega=self.config.invention.self_assessed_value,
@@ -111,7 +111,7 @@ class NegotiationSession:
             )
         )
 
-        # Phase 1: Seller disclosure
+        # Phase 1: Seller disclosure → omega_hat (1 API call)
         logger.info("Phase 1: Seller agent deciding disclosure")
         disclosure_msg = self.seller_agent.decide_disclosure()
         self.transcript.messages.append(disclosure_msg)
@@ -122,62 +122,25 @@ class NegotiationSession:
         omega_hat = disclosure_msg.disclosure.disclosed_value
         logger.info(f"Seller disclosed omega_hat={omega_hat:.4f}")
 
-        # Phase 2: Buyer evaluation and initial offer
-        logger.info("Phase 2: Buyer agent evaluating and offering")
+        # Phase 2: Buyer evaluation → v_b (1 API call)
+        logger.info("Phase 2: Buyer agent evaluating disclosure")
         buyer_msg = self.buyer_agent.evaluate_disclosure(
             disclosure_msg.disclosure, round_num=1
         )
         self.transcript.messages.append(buyer_msg)
 
-        if not buyer_msg.price_proposal:
-            return self._error_result("Buyer agent failed to produce offer")
+        v_b = self.buyer_agent.assessed_value
+        if v_b is None:
+            return self._error_result("Buyer agent failed to produce assessed_value")
 
-        # Phase 3: Multi-round negotiation
-        current_price = buyer_msg.price_proposal.proposed_price
-        round_num = 1
+        logger.info(f"Buyer assessed value v_b={v_b:.4f}")
 
-        for round_num in range(2, self.config.max_rounds + 1):
-            # Check if current price is acceptable
-            if self._is_price_acceptable(current_price, omega_hat):
-                break
-
-            # Seller evaluates buyer's offer
-            logger.info(f"Round {round_num}: Seller evaluating offer {current_price:.4f}")
-            seller_response = self.seller_agent.evaluate_offer(
-                current_price, buyer_msg.explanation, round_num
-            )
-            self.transcript.messages.append(seller_response)
-
-            # If seller has a counteroffer
-            if seller_response.price_proposal:
-                counter = seller_response.price_proposal.proposed_price
-
-                # Buyer responds to counter
-                buyer_msg = self.buyer_agent.respond_to_counter(
-                    counter,
-                    seller_response.explanation,
-                    disclosure_msg.disclosure,
-                    round_num,
-                )
-                self.transcript.messages.append(buyer_msg)
-
-                if buyer_msg.price_proposal:
-                    current_price = buyer_msg.price_proposal.proposed_price
-                else:
-                    break
-            else:
-                # Seller accepted or rejected without counter
-                break
-
-        # Phase 4: Deterministic resolution
-        # The final price is ALWAYS determined by Nash bargaining
-        equilibrium_price = compute_equilibrium_price(self.theta, omega_hat)
-        final_price = min(equilibrium_price, self.config.budget_cap)
-
+        # Phase 3: Bilateral Nash bargaining resolution
         omega = self.config.invention.self_assessed_value
         alpha_0 = self.config.invention.outside_option_value
 
-        if not check_budget_cap(equilibrium_price, self.config.budget_cap):
+        # Check deal viability: v_b >= alpha_0 * omega_hat
+        if not check_deal_viability(v_b, alpha_0, omega_hat):
             result = NegotiationResult(
                 outcome=NegotiationOutcomeType.NO_DEAL,
                 final_price=None,
@@ -186,9 +149,21 @@ class NegotiationSession:
                 phi=self.phi,
                 seller_payoff=None,
                 buyer_payoff=None,
-                reason=f"Equilibrium price {equilibrium_price:.4f} exceeds budget {self.config.budget_cap}",
+                buyer_valuation=v_b,
+                reason=(
+                    f"No surplus: buyer valuation {v_b:.4f} "
+                    f"< seller reservation {alpha_0 * omega_hat:.4f}"
+                ),
             )
-        elif not check_acceptance_threshold(final_price, alpha_0, omega, omega_hat):
+            self.transcript.result = result
+            logger.info(f"Negotiation complete: {result.outcome.value}")
+            return result
+
+        # Compute bilateral price: P* = (v_b + alpha_0 * omega_hat) / 2
+        price = compute_bilateral_price(alpha_0, omega_hat, v_b)
+
+        # Check budget cap
+        if not check_budget_cap(price, self.config.budget_cap):
             result = NegotiationResult(
                 outcome=NegotiationOutcomeType.NO_DEAL,
                 final_price=None,
@@ -197,34 +172,31 @@ class NegotiationSession:
                 phi=self.phi,
                 seller_payoff=None,
                 buyer_payoff=None,
-                reason=f"Price {final_price:.4f} below seller threshold {alpha_0 * omega_hat:.4f}",
+                buyer_valuation=v_b,
+                reason=f"Price {price:.4f} exceeds budget {self.config.budget_cap}",
             )
-        else:
-            seller_payoff = final_price + alpha_0 * (omega - omega_hat)
-            buyer_payoff = omega_hat - final_price
-            result = NegotiationResult(
-                outcome=NegotiationOutcomeType.AGREEMENT,
-                final_price=final_price,
-                omega_hat=omega_hat,
-                theta=self.theta,
-                phi=self.phi,
-                seller_payoff=seller_payoff,
-                buyer_payoff=buyer_payoff,
-                reason="Nash bargaining equilibrium reached",
-            )
+            self.transcript.result = result
+            logger.info(f"Negotiation complete: {result.outcome.value}")
+            return result
+
+        seller_payoff = compute_seller_payoff(price, alpha_0, omega, omega_hat)
+        buyer_payoff = v_b - price
+
+        result = NegotiationResult(
+            outcome=NegotiationOutcomeType.AGREEMENT,
+            final_price=price,
+            omega_hat=omega_hat,
+            theta=self.theta,
+            phi=self.phi,
+            seller_payoff=seller_payoff,
+            buyer_payoff=buyer_payoff,
+            buyer_valuation=v_b,
+            reason="Bilateral Nash bargaining equilibrium reached",
+        )
 
         self.transcript.result = result
         logger.info(f"Negotiation complete: {result.outcome.value}")
         return result
-
-    def _is_price_acceptable(self, price: float, omega_hat: float) -> bool:
-        """Check if a price satisfies both parties' constraints."""
-        omega = self.config.invention.self_assessed_value
-        alpha_0 = self.config.invention.outside_option_value
-        return (
-            check_budget_cap(price, self.config.budget_cap)
-            and check_acceptance_threshold(price, alpha_0, omega, omega_hat)
-        )
 
     def _error_result(self, reason: str) -> NegotiationResult:
         omega_hat = self.seller_agent.disclosed_omega_hat or 0.0

@@ -49,6 +49,7 @@ async def _run_negotiation_async(
             "final_price": result.final_price,
             "omega_hat": result.omega_hat,
             "negotiation_rounds": None,  # Round count not tracked through orchestrator
+            "buyer_valuation": result.buyer_valuation,
         }
         agreement["status"] = f"completed_{result.outcome.value}"
         _statuses[agreement_id] = {

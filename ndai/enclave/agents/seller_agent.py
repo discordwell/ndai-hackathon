@@ -164,8 +164,10 @@ Stage: {self.invention.development_stage}
 
 ## Strategy
 Full disclosure (omega_hat = omega) is theoretically optimal when within the security \
-threshold, as it maximizes the negotiation surplus. Be strategic about framing but \
-generally prefer higher disclosure."""
+threshold, as it maximizes the negotiation surplus. The buyer independently evaluates \
+the invention; both your disclosure and their assessment determine the final price \
+via bilateral Nash bargaining: P* = (buyer_assessment + alpha_0 * omega_hat) / 2. \
+Be strategic about framing but generally prefer higher disclosure."""
 
     def decide_disclosure(self) -> AgentMessage:
         """Ask the LLM to decide what to disclose. Hard-clamps omega_hat."""

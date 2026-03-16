@@ -38,18 +38,13 @@ export function OutcomeDisplay({
         </p>
       </div>
 
-      {outcome.negotiation_rounds !== null && (
-        <div className="text-sm text-gray-500 mb-4">
-          Negotiation rounds: {outcome.negotiation_rounds}
-        </div>
-      )}
-
       {isAgreement &&
         outcome.final_price !== null &&
         outcome.omega_hat !== null && (
           <PriceBreakdown
             finalPrice={outcome.final_price}
             omegaHat={outcome.omega_hat}
+            buyerValuation={outcome.buyer_valuation ?? null}
           />
         )}
     </Card>

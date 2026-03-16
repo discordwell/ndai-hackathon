@@ -457,6 +457,7 @@ class EnclaveOrchestrator:
                 phi=response.get("phi", 0.0),
                 seller_payoff=response.get("seller_payoff"),
                 buyer_payoff=response.get("buyer_payoff"),
+                buyer_valuation=response.get("buyer_valuation"),
                 reason=response.get("reason", "No reason provided by enclave"),
             )
         except Exception as exc:

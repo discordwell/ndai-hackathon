@@ -29,6 +29,17 @@
 - 170 tests passing (80 new from Phase 4)
 - Coded via 3 parallel subagents: enclave app, orchestrator, build pipeline
 
+### 2026-03-16T14:00Z — Bilateral Nash Bargaining
+- Replaced unilateral pricing (P* = θ·ω̂) with bilateral Nash bargaining (P* = (v_b + α₀·ω̂) / 2)
+- Buyer's assessed_value now directly affects final price (was discarded before)
+- Removed multi-round negotiation loop (3-11 API calls → 2 API calls)
+- Engine: added compute_bilateral_price, check_deal_viability, resolve_bilateral_negotiation
+- Buyer agent: single evaluate_invention call, no make_offer, assessed_value clamped to [0,1]
+- Session: 3 phases (seller disclosure → buyer eval → bilateral resolution)
+- Backward compatible: when v_b = ω̂, bilateral = unilateral
+- Critical test: test_changing_buyer_valuation_changes_price proves agent decisions matter
+- All 227 tests passing
+
 ## Key Findings
 
 - Paper's acceptance threshold: seller accepts if P >= alpha_0 * omega_hat (derived from P + alpha_0*(omega-omega_hat) >= alpha_0*omega)

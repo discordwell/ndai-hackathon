@@ -27,16 +27,18 @@ The parent instance proxies Claude API calls via vsock. The API key stays on the
 
 1. **Security capacity**: `Φ(k,p,C) = k·(1-(1-p)^k)·C/(1-p)^k` — max securable value given TEE parameters
 2. **Disclosure**: `ω̂ = min(ω, Φ)` — seller reveals up to security capacity
-3. **Nash bargaining**: `θ = (1+α₀)/2`, equilibrium price `P* = θ·ω̂`
-4. **Acceptance**: Seller accepts if `P ≥ α₀·ω̂` (payoff beats outside option)
+3. **Bilateral Nash bargaining**: `P* = (v_b + α₀·ω̂) / 2` where `v_b` = buyer's independent assessment
+4. **Deal viability**: `v_b ≥ α₀·ω̂` (non-negative surplus required)
 5. **Budget cap**: Buyer's `P̄` prevents overpayment
+
+When `v_b = ω̂`, this reduces to the paper's original formula `P* = θ·ω̂` where `θ = (1+α₀)/2` (backward compatible). The unilateral formula is still computed as an audit baseline.
 
 ### Hybrid Constraint Enforcement
 
-**Hard constraints** (code-enforced): disclosure ceiling, budget cap, acceptance threshold, session deletion.
-**Soft decisions** (LLM-delegated): disclosure framing, value assessment, negotiation reasoning.
+**Hard constraints** (code-enforced): disclosure ceiling, budget cap, deal viability, assessed_value clamp [0,1], session deletion.
+**Soft decisions** (LLM-delegated): disclosure framing, buyer value assessment.
 
-Final price is ALWAYS `P* = θ·ω̂`. LLMs evaluate; the math decides.
+Both agents' decisions affect the final price. The seller controls `ω̂` (disclosure), the buyer controls `v_b` (assessment). The math combines them deterministically.
 
 ## Key Components
 
@@ -62,10 +64,9 @@ Seller submits invention (encrypted client-side)
     → Inputs encrypted to enclave's ephemeral key
     → [Inside enclave]:
         → Decrypt inputs, compute Φ
-        → Seller agent decides ω̂ via Claude
-        → Buyer agent evaluates via Claude
-        → Multi-round negotiation
-        → Deterministic Nash resolution
+        → Seller agent decides ω̂ via Claude (1 API call)
+        → Buyer agent evaluates v_b via Claude (1 API call)
+        → Bilateral Nash resolution: P* = (v_b + α₀·ω̂) / 2
     → Agreement: invention key + payment released
     → No deal: all data destroyed, enclave terminated
 ```
@@ -74,7 +75,7 @@ Seller submits invention (encrypted client-side)
 
 - **Shamir SSS**: Invention encryption key split into n shares (k-of-n threshold)
 - **Attestation**: PCR values verify enclave code identity before disclosure
-- **vsock proxy**: Claude API calls routed through parent; TLS inside enclave
+- **vsock proxy**: Claude API calls routed through parent (parent sees plaintext; enclave-side TLS is future work)
 - **Enclave-per-negotiation**: Strong isolation, memory wiped on termination
 
 ## Tech Stack

@@ -79,6 +79,7 @@ class TestOrchestratorSimulatedMode:
             phi=100.0,
             seller_payoff=0.5,
             buyer_payoff=0.15,
+            buyer_valuation=0.6,
             reason="Nash bargaining equilibrium reached",
         )
 
@@ -227,12 +228,14 @@ class TestOrchestratorResponseParsing:
             "phi": 100.0,
             "seller_payoff": 0.5,
             "buyer_payoff": 0.15,
+            "buyer_valuation": 0.6,
             "reason": "Nash bargaining equilibrium reached",
         }
         result = orchestrator._parse_enclave_response(response)
         assert result.outcome == NegotiationOutcomeType.AGREEMENT
         assert result.final_price == 0.45
         assert result.omega_hat == 0.6
+        assert result.buyer_valuation == 0.6
 
     def test_parse_no_deal(self, test_settings):
         provider = SimulatedTEEProvider()

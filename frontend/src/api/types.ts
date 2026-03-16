@@ -78,6 +78,7 @@ export interface NegotiationOutcomeResponse {
   final_price: number | null;
   omega_hat: number | null;
   negotiation_rounds: number | null;
+  buyer_valuation: number | null;
 }
 
 export interface NegotiationStatusResponse {

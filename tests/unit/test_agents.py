@@ -140,70 +140,103 @@ class TestSellerAgent:
 
 
 class TestBuyerAgent:
-    def test_offer_clamps_to_budget(self):
-        """Hard constraint: price <= budget_cap."""
+    def test_assessed_value_extracted(self):
+        """Buyer agent extracts assessed_value from evaluation."""
         llm = MagicMock(spec=LLMClient)
-
-        # Evaluation response
         eval_resp = _mock_tool_response(
             "evaluate_invention",
             {
-                "assessed_value": 0.9,
+                "assessed_value": 0.65,
                 "strengths": ["Good"],
                 "concerns": [],
-                "reasoning": "High value",
+                "reasoning": "Fair value",
             },
         )
-        # Offer response with price exceeding budget
-        offer_resp = _mock_tool_response(
-            "make_offer",
-            {
-                "price": 0.8,  # Exceeds budget of 0.3
-                "explanation": "Worth it",
-                "private_reasoning": "Overpaying",
+        llm.create_message.return_value = eval_resp
+        llm.extract_tool_use.return_value = {
+            "name": "evaluate_invention",
+            "input": {
+                "assessed_value": 0.65,
+                "strengths": ["Good"],
+                "concerns": [],
+                "reasoning": "Fair value",
             },
-        )
+            "id": "eval_id",
+        }
 
-        llm.create_message.side_effect = [eval_resp, offer_resp]
-        llm.extract_tool_use.side_effect = [
-            {
-                "name": "evaluate_invention",
-                "input": {
-                    "assessed_value": 0.9,
-                    "strengths": ["Good"],
-                    "concerns": [],
-                    "reasoning": "High value",
-                },
-                "id": "eval_id",
-            },
-            {
-                "name": "make_offer",
-                "input": {
-                    "price": 0.8,
-                    "explanation": "Worth it",
-                    "private_reasoning": "Overpaying",
-                },
-                "id": "offer_id",
-            },
-        ]
-
-        agent = BuyerAgent(budget_cap=0.3, theta=0.65, llm_client=llm)
+        agent = BuyerAgent(budget_cap=0.5, theta=0.65, llm_client=llm)
         disclosure = InventionDisclosure(
             summary="Test", technical_details="Details",
             disclosed_value=0.7, disclosure_fraction=0.9,
             withheld_aspects=[],
         )
-        msg = agent.evaluate_disclosure(disclosure)
+        agent.evaluate_disclosure(disclosure)
 
-        assert msg.price_proposal is not None
-        assert msg.price_proposal.proposed_price <= 0.3  # Clamped to budget
+        assert agent.assessed_value == pytest.approx(0.65)
 
-    def test_fallback_offer(self):
-        """When LLM fails, fallback produces valid offer."""
+    def test_assessed_value_clamped(self):
+        """Hard constraint: assessed_value clamped to [0, 1]."""
         llm = MagicMock(spec=LLMClient)
-        # Both calls return no tool use
+        eval_resp = _mock_tool_response(
+            "evaluate_invention",
+            {
+                "assessed_value": 1.5,  # Exceeds 1.0
+                "strengths": ["Great"],
+                "concerns": [],
+                "reasoning": "Overvalued",
+            },
+        )
+        llm.create_message.return_value = eval_resp
+        llm.extract_tool_use.return_value = {
+            "name": "evaluate_invention",
+            "input": {
+                "assessed_value": 1.5,
+                "strengths": ["Great"],
+                "concerns": [],
+                "reasoning": "Overvalued",
+            },
+            "id": "eval_id",
+        }
+
+        agent = BuyerAgent(budget_cap=0.5, theta=0.65, llm_client=llm)
+        disclosure = InventionDisclosure(
+            summary="Test", technical_details="Details",
+            disclosed_value=0.7, disclosure_fraction=0.9,
+            withheld_aspects=[],
+        )
+        agent.evaluate_disclosure(disclosure)
+
+        assert agent.assessed_value <= 1.0
+
+    def test_assessed_value_clamped_negative(self):
+        """assessed_value clamped to >= 0."""
+        llm = MagicMock(spec=LLMClient)
+        eval_resp = _mock_tool_response(
+            "evaluate_invention",
+            {"assessed_value": -0.5, "strengths": [], "concerns": ["Bad"], "reasoning": "Low"},
+        )
+        llm.create_message.return_value = eval_resp
+        llm.extract_tool_use.return_value = {
+            "name": "evaluate_invention",
+            "input": {"assessed_value": -0.5, "strengths": [], "concerns": ["Bad"], "reasoning": "Low"},
+            "id": "e",
+        }
+
+        agent = BuyerAgent(budget_cap=0.5, theta=0.65, llm_client=llm)
+        disclosure = InventionDisclosure(
+            summary="Test", technical_details="Details",
+            disclosed_value=0.6, disclosure_fraction=0.8,
+            withheld_aspects=[],
+        )
+        agent.evaluate_disclosure(disclosure)
+
+        assert agent.assessed_value >= 0
+
+    def test_fallback_evaluation(self):
+        """When LLM fails, fallback sets assessed_value to omega_hat."""
+        llm = MagicMock(spec=LLMClient)
         no_tool_resp = MagicMock(content=[])
-        llm.create_message.side_effect = [no_tool_resp, no_tool_resp]
+        llm.create_message.return_value = no_tool_resp
         llm.extract_tool_use.return_value = None
 
         agent = BuyerAgent(budget_cap=0.5, theta=0.65, llm_client=llm)
@@ -212,36 +245,6 @@ class TestBuyerAgent:
             disclosed_value=0.6, disclosure_fraction=0.8,
             withheld_aspects=[],
         )
-        msg = agent.evaluate_disclosure(disclosure)
+        agent.evaluate_disclosure(disclosure)
 
-        assert msg.price_proposal is not None
-        assert msg.price_proposal.proposed_price <= 0.5
-        assert msg.price_proposal.proposed_price == pytest.approx(0.65 * 0.6, abs=0.01)
-
-    def test_offer_non_negative(self):
-        """Offer price is always >= 0."""
-        llm = MagicMock(spec=LLMClient)
-        eval_resp = _mock_tool_response(
-            "evaluate_invention",
-            {"assessed_value": 0.1, "strengths": [], "concerns": ["Bad"], "reasoning": "Low"},
-        )
-        offer_resp = _mock_tool_response(
-            "make_offer",
-            {"price": -0.5, "explanation": "Worthless", "private_reasoning": "Negative"},
-        )
-        llm.create_message.side_effect = [eval_resp, offer_resp]
-        llm.extract_tool_use.side_effect = [
-            {"name": "evaluate_invention", "input": {"assessed_value": 0.1}, "id": "e"},
-            {"name": "make_offer", "input": {"price": -0.5, "explanation": "x", "private_reasoning": "y"}, "id": "o"},
-        ]
-
-        agent = BuyerAgent(budget_cap=0.5, theta=0.65, llm_client=llm)
-        disclosure = InventionDisclosure(
-            summary="Test", technical_details="Details",
-            disclosed_value=0.6, disclosure_fraction=0.8,
-            withheld_aspects=[],
-        )
-        msg = agent.evaluate_disclosure(disclosure)
-
-        assert msg.price_proposal is not None
-        assert msg.price_proposal.proposed_price >= 0
+        assert agent.assessed_value == pytest.approx(0.6)  # Defaults to omega_hat

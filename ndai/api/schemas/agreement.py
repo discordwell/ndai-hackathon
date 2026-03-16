@@ -29,3 +29,4 @@ class NegotiationOutcomeResponse(BaseModel):
     final_price: float | None
     omega_hat: float | None
     negotiation_rounds: int | None
+    buyer_valuation: float | None = None

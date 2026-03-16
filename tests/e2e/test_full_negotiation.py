@@ -2,6 +2,11 @@
 
 Tests the complete flow: invention submission -> agent negotiation -> outcome,
 using the SimulatedTEE and mocked Claude responses.
+
+With bilateral Nash bargaining, the flow is:
+1. Seller disclosure (1 API call)
+2. Buyer evaluation (1 API call)
+3. Bilateral resolution: P* = (v_b + alpha_0 * omega_hat) / 2
 """
 
 from unittest.mock import MagicMock
@@ -30,12 +35,13 @@ def _mock_tool_response(name: str, input_data: dict):
     return response
 
 
-def _make_mock_llm():
-    """Create a mock LLM that produces valid seller disclosure and buyer offer.
+def _make_mock_llm(assessed_value: float = 0.65):
+    """Create a mock LLM that produces valid seller disclosure and buyer evaluation.
 
-    omega=0.75, alpha_0=0.3 => theta=0.65, floor=0.4875
-    Seller discloses omega_hat=0.7 => equilibrium P*=0.65*0.7=0.455
-    Buyer offers 0.50 (above floor) => accepted immediately.
+    omega=0.75, alpha_0=0.3 => theta=0.65
+    Seller discloses omega_hat=0.7
+    Buyer assesses at assessed_value (default 0.65)
+    Bilateral price: P* = (assessed_value + 0.3 * 0.7) / 2
     """
     llm = MagicMock(spec=LLMClient)
 
@@ -54,44 +60,19 @@ def _make_mock_llm():
         },
     )
 
-    # Buyer evaluation response
+    # Buyer evaluation response (single call — no make_offer)
     buyer_eval = _mock_tool_response(
         "evaluate_invention",
         {
-            "assessed_value": 0.65,
+            "assessed_value": assessed_value,
             "strengths": ["Novel ring-LWE variant", "Formal verification"],
             "concerns": ["Prototype stage", "Withheld optimization details"],
             "reasoning": "Strong technical merit but unproven at scale.",
         },
     )
 
-    # Buyer offer: 0.50, above seller floor 0.4875
-    buyer_offer = _mock_tool_response(
-        "make_offer",
-        {
-            "price": 0.50,
-            "explanation": "Fair price above equilibrium.",
-            "private_reasoning": "Offering above floor to close deal.",
-        },
-    )
-
-    # Seller accept response (used if negotiation continues)
-    seller_accept = _mock_tool_response(
-        "respond_to_offer",
-        {
-            "action": "accept",
-            "explanation": "Price meets our threshold. Accepted.",
-            "private_reasoning": "Above minimum acceptable price.",
-        },
-    )
-
-    # Provide enough responses for multi-round cases
-    # After the main sequence, repeat the accept response
-    responses = [seller_disclosure, buyer_eval, buyer_offer, seller_accept]
-    for _ in range(10):
-        responses.append(seller_accept)
-        responses.append(buyer_offer)
-
+    # Only 2 responses needed: seller disclosure + buyer evaluation
+    responses = [seller_disclosure, buyer_eval]
     llm.create_message.side_effect = responses
 
     def extract_tool(resp):
@@ -157,7 +138,9 @@ class TestFullNegotiation:
         assert result.omega_hat <= invention.self_assessed_value
         assert result.seller_payoff is not None
         assert result.buyer_payoff is not None
-        assert len(session.transcript.messages) >= 2
+        assert result.buyer_valuation is not None
+        # Only 2 messages: seller disclosure + buyer evaluation
+        assert len(session.transcript.messages) == 2
 
     def test_pareto_improvement(self, invention, security_params):
         """NDAI outcome Pareto-dominates the no-disclosure baseline."""
@@ -234,9 +217,37 @@ class TestFullNegotiation:
 
         session.run()
 
-        # Should have at least seller disclosure + buyer offer
-        assert len(session.transcript.messages) >= 2
+        # Should have exactly seller disclosure + buyer evaluation
+        assert len(session.transcript.messages) == 2
         # First message should be seller's disclosure
         assert session.transcript.messages[0].disclosure is not None
-        # Second message should have buyer's price proposal
-        assert session.transcript.messages[1].price_proposal is not None
+        # Second message is buyer evaluation (no price_proposal in bilateral mode)
+        assert session.transcript.messages[1].role.value == "buyer_agent"
+
+    def test_buyer_valuation_affects_price(self, invention, security_params):
+        """Critical: different buyer assessed_values produce different final prices."""
+        config = SessionConfig(
+            invention=invention,
+            budget_cap=1.0,
+            security_params=security_params,
+            anthropic_api_key="test-key",
+        )
+
+        # Run 1: buyer assesses at 0.5
+        session1 = NegotiationSession(config)
+        session1.seller_agent.llm = _make_mock_llm(assessed_value=0.5)
+        session1.buyer_agent.llm = session1.seller_agent.llm
+        result1 = session1.run()
+
+        # Run 2: buyer assesses at 0.8
+        session2 = NegotiationSession(config)
+        session2.seller_agent.llm = _make_mock_llm(assessed_value=0.8)
+        session2.buyer_agent.llm = session2.seller_agent.llm
+        result2 = session2.run()
+
+        assert result1.outcome == NegotiationOutcomeType.AGREEMENT
+        assert result2.outcome == NegotiationOutcomeType.AGREEMENT
+        assert result1.final_price != result2.final_price
+        assert result2.final_price > result1.final_price
+        assert result1.buyer_valuation == pytest.approx(0.5)
+        assert result2.buyer_valuation == pytest.approx(0.8)

@@ -1,7 +1,8 @@
 """Buyer's AI agent for NDAI negotiation.
 
-Represents the investor's interests inside the TEE. Uses Claude to evaluate
-the disclosed invention and determine pricing, with budget cap enforced in code.
+Represents the investor's interests inside the TEE. Uses Claude to independently
+assess the invention's value. The assessed_value directly determines the final
+price via bilateral Nash bargaining: P* = (v_b + alpha_0 * omega_hat) / 2.
 """
 
 from typing import Any
@@ -36,8 +37,9 @@ BUYER_TOOLS = [
                 "assessed_value": {
                     "type": "number",
                     "description": (
-                        "Your assessment of the disclosed invention's value. "
-                        "Should be in [0, 1)."
+                        "Your assessment of the disclosed invention's value, in [0, 1]. "
+                        "This directly determines the final price via bilateral Nash bargaining: "
+                        "P* = (assessed_value + alpha_0 * omega_hat) / 2."
                     ),
                 },
                 "strengths": {
@@ -56,28 +58,6 @@ BUYER_TOOLS = [
                 },
             },
             "required": ["assessed_value", "strengths", "concerns", "reasoning"],
-        },
-    },
-    {
-        "name": "make_offer",
-        "description": "Make a price offer for the invention.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "price": {
-                    "type": "number",
-                    "description": "The price you offer. Must be <= budget cap.",
-                },
-                "explanation": {
-                    "type": "string",
-                    "description": "Explanation for the seller's agent.",
-                },
-                "private_reasoning": {
-                    "type": "string",
-                    "description": "Private reasoning (not shared with seller).",
-                },
-            },
-            "required": ["price", "explanation", "private_reasoning"],
         },
     },
 ]
@@ -119,28 +99,30 @@ Withheld: {', '.join(disclosure.withheld_aspects) if disclosure.withheld_aspects
 confidential invention inside a Trusted Execution Environment (TEE).
 
 ## Your Role
-Evaluate the invention and negotiate a fair price that maximizes buyer surplus.
+Independently assess the invention's value. Your assessed_value directly determines \
+the final price via bilateral Nash bargaining: P* = (assessed_value + alpha_0 * omega_hat) / 2.
 
 {disclosure_text}
 
 ## Parameters
 - Budget cap (P_bar): {self.budget_cap}
 - Nash bargaining share (theta): {self.theta:.4f}
-- Equilibrium price formula: P* = theta * omega_hat
+- Bilateral price formula: P* = (your_assessed_value + alpha_0 * omega_hat) / 2
 
-## Constraints
-1. Your offer MUST NOT exceed budget cap {self.budget_cap}
-2. Aim for equilibrium price P* = theta * omega_hat = {self.theta:.4f} * omega_hat
-3. Maximize: omega_hat - P (your surplus)
+## How Your Assessment Matters
+- A higher assessed_value means a higher price (you pay more, but signal true value)
+- A lower assessed_value means a lower price (but may kill the deal if below seller's floor)
+- The deal only happens if assessed_value >= alpha_0 * omega_hat (non-negative surplus)
+- Your surplus = assessed_value - P*
 
 ## Strategy
-Evaluate the invention on its merits. The Nash bargaining equilibrium price is the \
-theoretically optimal outcome. Significant deviations risk deal failure."""
+Evaluate the invention honestly on its merits. The buyer independently evaluates; \
+the seller independently discloses. Both decisions shape the final price."""
 
     def evaluate_disclosure(
         self, disclosure: InventionDisclosure, round_num: int = 1
     ) -> AgentMessage:
-        """Evaluate the seller's disclosure and make an initial offer."""
+        """Evaluate the seller's disclosure. assessed_value determines the final price."""
         self._conversation = [
             {
                 "role": "user",
@@ -150,12 +132,12 @@ theoretically optimal outcome. Significant deviations risk deal failure."""
                     f"Technical Details: {disclosure.technical_details}\n\n"
                     f"Disclosed Value (omega_hat): {disclosure.disclosed_value}\n"
                     f"Withheld: {', '.join(disclosure.withheld_aspects)}\n\n"
-                    f"First, evaluate the invention, then make your price offer."
+                    f"Evaluate this invention. Your assessed_value will directly "
+                    f"determine the final price."
                 ),
             }
         ]
 
-        # Step 1: Evaluate
         eval_response = self.llm.create_message(
             system=self._system_prompt(disclosure),
             messages=self._conversation,
@@ -166,57 +148,21 @@ theoretically optimal outcome. Significant deviations risk deal failure."""
         eval_tool = self.llm.extract_tool_use(eval_response)
         self._conversation.append({"role": "assistant", "content": eval_response.content})
 
-        if eval_tool:
-            self.assessed_value = float(eval_tool["input"].get("assessed_value", 0))
-            # Send tool_result and follow-up prompt
-            self._conversation.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": eval_tool["id"],
-                            "content": [{"type": "text", "text": "Evaluation recorded. Now make your price offer."}],
-                        },
-                    ],
-                }
-            )
-        else:
-            self._conversation.append(
-                {"role": "user", "content": "Now make your price offer."}
-            )
+        if not eval_tool:
+            return self._fallback_evaluation(disclosure, round_num)
 
-        # Step 2: Offer
-        offer_response = self.llm.create_message(
-            system=self._system_prompt(disclosure),
-            messages=self._conversation,
-            tools=BUYER_TOOLS,
-            tool_choice={"type": "tool", "name": "make_offer"},
-        )
+        args = eval_tool["input"]
 
-        offer_tool = self.llm.extract_tool_use(offer_response)
-        self._conversation.append({"role": "assistant", "content": offer_response.content})
-
-        if not offer_tool:
-            return self._fallback_offer(disclosure, round_num)
-
-        args = offer_tool["input"]
-
-        # HARD CONSTRAINT: clamp price to budget cap
-        raw_price = float(args.get("price", 0))
-        price = max(0.0, min(raw_price, self.budget_cap))
+        # HARD CONSTRAINT: clamp assessed_value to [0, 1]
+        raw_value = float(args.get("assessed_value", 0))
+        self.assessed_value = max(0.0, min(raw_value, 1.0))
 
         return AgentMessage(
             role=AgentRole.BUYER,
             round_number=round_num,
-            price_proposal=PriceProposal(
-                proposed_price=price,
-                reasoning=str(args.get("private_reasoning", "")),
-                confidence=0.8,
-            ),
-            explanation=str(args.get("explanation", "")),
-            private_reasoning=str(args.get("private_reasoning", "")),
-            raw_response=offer_tool,
+            explanation=str(args.get("reasoning", "")),
+            private_reasoning=str(args.get("reasoning", "")),
+            raw_response=eval_tool,
         )
 
     def respond_to_counter(
@@ -269,19 +215,14 @@ theoretically optimal outcome. Significant deviations risk deal failure."""
             raw_response=tool_use,
         )
 
-    def _fallback_offer(
+    def _fallback_evaluation(
         self, disclosure: InventionDisclosure, round_num: int
     ) -> AgentMessage:
-        """Fallback: offer equilibrium price."""
-        price = min(self.theta * disclosure.disclosed_value, self.budget_cap)
+        """Fallback: assess value at omega_hat (trust seller's disclosure)."""
+        self.assessed_value = disclosure.disclosed_value
         return AgentMessage(
             role=AgentRole.BUYER,
             round_number=round_num,
-            price_proposal=PriceProposal(
-                proposed_price=price,
-                reasoning="LLM fallback: equilibrium price",
-                confidence=0.5,
-            ),
-            explanation="Offering equilibrium price.",
-            private_reasoning="LLM fallback",
+            explanation="LLM fallback: assessed value at omega_hat.",
+            private_reasoning="LLM fallback: defaulting assessed_value to omega_hat",
         )

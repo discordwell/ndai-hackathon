@@ -74,8 +74,9 @@ class NegotiationResult:
     theta: float  # Nash bargaining parameter
     phi: float  # Security capacity
     seller_payoff: float | None  # P + alpha_0 * (omega - omega_hat)
-    buyer_payoff: float | None  # omega_hat - P
-    reason: str
+    buyer_payoff: float | None  # v_b - P (buyer's perceived surplus)
+    buyer_valuation: float | None = None  # v_b: buyer's independent assessment
+    reason: str = ""
 
 
 def security_capacity(params: SecurityParams) -> float:
@@ -165,6 +166,93 @@ def compute_buyer_payoff(omega_hat: float, price: float) -> float:
     Payoff = omega_hat - P
     """
     return omega_hat - price
+
+
+def compute_bilateral_price(alpha_0: float, omega_hat: float, buyer_valuation: float) -> float:
+    """Compute bilateral Nash bargaining price.
+
+    P* = (v_b + alpha_0 * omega_hat) / 2
+
+    Derived by maximizing Nash product (P - alpha_0*omega_hat)(v_b - P).
+    When v_b = omega_hat, reduces to theta * omega_hat (backward compatible).
+    """
+    return (buyer_valuation + alpha_0 * omega_hat) / 2
+
+
+def check_deal_viability(buyer_valuation: float, alpha_0: float, omega_hat: float) -> bool:
+    """Check whether a bilateral deal has non-negative surplus.
+
+    Deal is viable when v_b >= alpha_0 * omega_hat (surplus >= 0).
+    """
+    return buyer_valuation >= alpha_0 * omega_hat - 1e-10
+
+
+def resolve_bilateral_negotiation(
+    params: NegotiationParams, buyer_valuation: float
+) -> NegotiationResult:
+    """Resolve negotiation using bilateral Nash bargaining.
+
+    Uses buyer's independent valuation v_b to compute:
+        P* = (v_b + alpha_0 * omega_hat) / 2
+
+    Steps:
+    1. Compute security capacity and disclosure (same as unilateral)
+    2. Check deal viability: v_b >= alpha_0 * omega_hat
+    3. Compute bilateral price
+    4. Check budget cap
+    5. Compute payoffs: buyer gets v_b - P*, seller gets P* + alpha_0*(omega - omega_hat)
+    """
+    phi = security_capacity(params.security_params)
+    omega_hat = compute_disclosure(params.omega, phi)
+    theta = compute_theta(params.alpha_0)
+
+    # Check deal viability (non-negative surplus)
+    if not check_deal_viability(buyer_valuation, params.alpha_0, omega_hat):
+        return NegotiationResult(
+            outcome=NegotiationOutcomeType.NO_DEAL,
+            final_price=None,
+            omega_hat=omega_hat,
+            theta=theta,
+            phi=phi,
+            seller_payoff=None,
+            buyer_payoff=None,
+            buyer_valuation=buyer_valuation,
+            reason=(
+                f"No surplus: buyer valuation {buyer_valuation:.4f} "
+                f"< seller reservation {params.alpha_0 * omega_hat:.4f}"
+            ),
+        )
+
+    price = compute_bilateral_price(params.alpha_0, omega_hat, buyer_valuation)
+
+    # Check budget cap
+    if not check_budget_cap(price, params.budget_cap):
+        return NegotiationResult(
+            outcome=NegotiationOutcomeType.NO_DEAL,
+            final_price=None,
+            omega_hat=omega_hat,
+            theta=theta,
+            phi=phi,
+            seller_payoff=None,
+            buyer_payoff=None,
+            buyer_valuation=buyer_valuation,
+            reason=f"Price {price:.6f} exceeds budget cap {params.budget_cap:.6f}",
+        )
+
+    seller_payoff = compute_seller_payoff(price, params.alpha_0, params.omega, omega_hat)
+    buyer_payoff = buyer_valuation - price
+
+    return NegotiationResult(
+        outcome=NegotiationOutcomeType.AGREEMENT,
+        final_price=price,
+        omega_hat=omega_hat,
+        theta=theta,
+        phi=phi,
+        seller_payoff=seller_payoff,
+        buyer_payoff=buyer_payoff,
+        buyer_valuation=buyer_valuation,
+        reason="Bilateral Nash bargaining equilibrium reached",
+    )
 
 
 def compute_baseline_payoffs(omega: float, alpha_0: float) -> tuple[float, float]:
