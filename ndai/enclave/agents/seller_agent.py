@@ -207,6 +207,11 @@ Be strategic about framing but generally prefer higher disclosure."""
 
         # Store conversation for multi-turn
         self._conversation.append({"role": "assistant", "content": response.content})
+        # Append tool result so OpenAI conversation stays valid
+        self._conversation.append({
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": tool_use["id"], "content": "Disclosure recorded."}],
+        })
 
         return AgentMessage(
             role=AgentRole.SELLER,
@@ -270,6 +275,12 @@ Be strategic about framing but generally prefer higher disclosure."""
                 round_number=round_num,
                 explanation="Accepted.",
             )
+
+        # Append tool result so OpenAI conversation stays valid
+        self._conversation.append({
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": tool_use["id"], "content": "Response recorded."}],
+        })
 
         args = tool_use["input"]
         action = args.get("action", "accept")

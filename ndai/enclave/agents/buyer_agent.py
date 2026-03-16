@@ -176,6 +176,12 @@ the seller independently discloses. Both decisions shape the final price."""
         if not eval_tool:
             return self._fallback_evaluation(disclosure, round_num)
 
+        # Append tool result so OpenAI conversation stays valid
+        self._conversation.append({
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": eval_tool["id"], "content": "Evaluation recorded."}],
+        })
+
         args = eval_tool["input"]
 
         # HARD CONSTRAINT: clamp assessed_value to [0, 1]
@@ -221,6 +227,12 @@ the seller independently discloses. Both decisions shape the final price."""
 
         if not tool_use:
             return None
+
+        # Append tool result so OpenAI conversation stays valid
+        self._conversation.append({
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": tool_use["id"], "content": "Offer recorded."}],
+        })
 
         args = tool_use["input"]
 
