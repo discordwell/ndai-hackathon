@@ -233,13 +233,46 @@ def _serialize_result(result: Any) -> dict[str, Any]:
 # Everything else (omega_hat, theta, phi, payoffs, buyer_valuation) stays in the enclave.
 _SAFE_RESULT_FIELDS = {"outcome", "final_price", "reason"}
 
+# Map of detailed reason strings to safe generic versions.
+# Reason strings may contain numerical values (buyer_valuation, prices,
+# alpha_0 * omega_hat) that are supposed to stay confidential.
+_SAFE_REASONS: dict[str, str] = {
+    "Bilateral Nash bargaining equilibrium reached": "Agreement reached",
+    "Nash bargaining equilibrium reached": "Agreement reached",
+}
+
+
+def _sanitize_reason(reason: str | None) -> str | None:
+    """Replace reason strings that leak numerical internals with safe versions."""
+    if reason is None:
+        return None
+    # Exact match to known safe mappings
+    if reason in _SAFE_REASONS:
+        return _SAFE_REASONS[reason]
+    lower = reason.lower()
+    # Check specific patterns first (most → least specific)
+    if "below" in lower and "threshold" in lower:
+        return "Below seller threshold"
+    if "exceeds budget" in lower:
+        return "Exceeds budget"
+    # Catch-all for reasons with sensitive numerical context
+    if any(keyword in lower for keyword in (
+        "valuation", "reservation", "threshold", "surplus",
+    )):
+        return "No deal"
+    # Unknown reason — strip to avoid leaking anything unexpected
+    return "Negotiation concluded"
+
 
 def _strip_sensitive_fields(result_dict: dict[str, Any]) -> dict[str, Any]:
     """Strip sensitive negotiation internals before sending to the parent.
 
-    Only outcome, final_price, and reason leave the enclave.
+    Only outcome, final_price, and reason (sanitized) leave the enclave.
     """
-    return {k: v for k, v in result_dict.items() if k in _SAFE_RESULT_FIELDS}
+    safe = {k: v for k, v in result_dict.items() if k in _SAFE_RESULT_FIELDS}
+    if "reason" in safe:
+        safe["reason"] = _sanitize_reason(safe["reason"])
+    return safe
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ into LLM system prompts, mitigating prompt injection attacks.
 """
 
 import re
+import unicodedata
 
 # Case-insensitive patterns that could hijack LLM instruction flow.
 # Matches are replaced with empty string to neutralize without alerting.
@@ -53,18 +54,22 @@ def escape_for_prompt(text: str, max_length: int = 5000) -> str:
     # 1. Truncate
     result = text[:max_length]
 
-    # 2. Strip injection patterns (before angle bracket escaping so patterns
+    # 2. Unicode normalization (NFKC) to collapse homoglyphs and compatibility
+    #    forms that could bypass ASCII pattern matching (e.g. fullwidth ＳＹＳＴＥＭ)
+    result = unicodedata.normalize("NFKC", result)
+
+    # 3. Strip injection patterns (before angle bracket escaping so patterns
     #    like <<SYS>> and <|im_start|> match their raw forms)
     for pattern in _INJECTION_PATTERNS:
         result = pattern.sub("[FILTERED]", result)
 
-    # 3. Escape angle brackets to prevent XML/tag injection
+    # 4. Escape angle brackets to prevent XML/tag injection
     result = result.replace("<", "&lt;").replace(">", "&gt;")
 
-    # 4. Neutralize triple backticks (used for code fences / system blocks)
+    # 5. Neutralize triple backticks (used for code fences / system blocks)
     result = result.replace("```", "'''")
 
-    # 5. Strip control characters (keep \n and \t)
+    # 6. Strip control characters (keep \n and \t)
     result = _CONTROL_CHAR_RE.sub("", result)
 
     return result

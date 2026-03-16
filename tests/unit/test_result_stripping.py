@@ -2,7 +2,7 @@
 
 import pytest
 
-from ndai.enclave.app import _strip_sensitive_fields
+from ndai.enclave.app import _sanitize_reason, _strip_sensitive_fields
 
 
 class TestStripSensitiveFields:
@@ -18,14 +18,14 @@ class TestStripSensitiveFields:
             "seller_payoff": 0.5,
             "buyer_payoff": 0.15,
             "buyer_valuation": 0.6,
-            "reason": "Nash bargaining equilibrium reached",
+            "reason": "Bilateral Nash bargaining equilibrium reached",
         }
         stripped = _strip_sensitive_fields(full_result)
 
         assert stripped == {
             "outcome": "agreement",
             "final_price": 0.45,
-            "reason": "Nash bargaining equilibrium reached",
+            "reason": "Agreement reached",
         }
 
     def test_no_omega_hat_survives(self):
@@ -60,10 +60,10 @@ class TestStripSensitiveFields:
         assert "theta" not in stripped
         assert "phi" not in stripped
 
-    def test_reason_included_when_present(self):
-        result = {"outcome": "no_deal", "final_price": None, "reason": "Budget exceeded"}
+    def test_reason_sanitized_when_present(self):
+        result = {"outcome": "no_deal", "final_price": None, "reason": "Price 0.500000 exceeds budget cap 0.400000"}
         stripped = _strip_sensitive_fields(result)
-        assert stripped["reason"] == "Budget exceeded"
+        assert stripped["reason"] == "Exceeds budget"
 
     def test_no_deal_result(self):
         result = {
@@ -74,13 +74,13 @@ class TestStripSensitiveFields:
             "phi": 100.0,
             "seller_payoff": None,
             "buyer_payoff": None,
-            "reason": "Budget exceeded",
+            "reason": "No surplus: buyer valuation 0.3000 < seller reservation 0.2100",
         }
         stripped = _strip_sensitive_fields(result)
         assert stripped == {
             "outcome": "no_deal",
             "final_price": None,
-            "reason": "Budget exceeded",
+            "reason": "No deal",
         }
 
     def test_error_result(self):
@@ -98,7 +98,8 @@ class TestStripSensitiveFields:
         assert stripped == {
             "outcome": "error",
             "final_price": None,
-            "reason": "LLM exploded",
+            # Unknown reasons get generic text to prevent leakage
+            "reason": "Negotiation concluded",
         }
 
     def test_empty_result(self):
@@ -109,7 +110,7 @@ class TestStripSensitiveFields:
         result = {
             "outcome": "agreement",
             "final_price": 0.5,
-            "reason": "Deal",
+            "reason": "Bilateral Nash bargaining equilibrium reached",
             "secret_internal_state": "should not leak",
             "debug_info": {"sensitive": True},
         }
@@ -117,3 +118,45 @@ class TestStripSensitiveFields:
         assert "secret_internal_state" not in stripped
         assert "debug_info" not in stripped
         assert len(stripped) == 3
+
+
+class TestSanitizeReason:
+    """Tests for _sanitize_reason() — prevent numerical leakage via reason strings."""
+
+    def test_none_passthrough(self):
+        assert _sanitize_reason(None) is None
+
+    def test_bilateral_nash_sanitized(self):
+        assert _sanitize_reason("Bilateral Nash bargaining equilibrium reached") == "Agreement reached"
+
+    def test_nash_sanitized(self):
+        assert _sanitize_reason("Nash bargaining equilibrium reached") == "Agreement reached"
+
+    def test_buyer_valuation_leak_caught(self):
+        reason = "No surplus: buyer valuation 0.3000 < seller reservation 0.2100"
+        assert _sanitize_reason(reason) == "No deal"
+
+    def test_budget_exceeded_leak_caught(self):
+        reason = "Price 0.500000 exceeds budget cap 0.400000"
+        assert _sanitize_reason(reason) == "Exceeds budget"
+
+    def test_below_threshold_leak_caught(self):
+        reason = "Price 0.100000 below seller threshold 0.210000"
+        assert _sanitize_reason(reason) == "Below seller threshold"
+
+    def test_unknown_reason_gets_generic(self):
+        assert _sanitize_reason("Some unexpected internal state info") == "Negotiation concluded"
+
+    def test_no_numerical_values_in_sanitized_output(self):
+        """No matter what the input, output should not contain float patterns."""
+        import re
+        float_re = re.compile(r"\d+\.\d{3,}")  # 3+ decimal places (like 0.3000)
+        reasons = [
+            "No surplus: buyer valuation 0.3000 < seller reservation 0.2100",
+            "Price 0.500000 exceeds budget cap 0.400000",
+            "Price 0.100000 below seller threshold 0.210000",
+            "Bilateral Nash bargaining equilibrium reached",
+        ]
+        for reason in reasons:
+            sanitized = _sanitize_reason(reason)
+            assert not float_re.search(sanitized), f"Numerical leak in: {sanitized}"

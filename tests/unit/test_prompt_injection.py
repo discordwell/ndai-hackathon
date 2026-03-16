@@ -98,6 +98,19 @@ class TestEscapeForPrompt:
         assert "\n" in result
         assert "\t" in result
 
+    def test_unicode_homoglyph_normalized(self):
+        """Fullwidth characters should be normalized to ASCII before pattern matching."""
+        # Fullwidth "SYSTEM:" — U+FF33 U+FF39 U+FF33 U+FF34 U+FF25 U+FF2D U+FF1A
+        fullwidth_system = "\uff33\uff39\uff33\uff34\uff25\uff2d\uff1a"
+        result = escape_for_prompt(fullwidth_system)
+        assert "[FILTERED]" in result
+
+    def test_unicode_fullwidth_override(self):
+        """Fullwidth OVERRIDE should be caught after NFKC normalization."""
+        fullwidth_override = "\uff2f\uff36\uff25\uff32\uff32\uff29\uff24\uff25"
+        result = escape_for_prompt(fullwidth_override)
+        assert "[FILTERED]" in result
+
     def test_combined_attack(self):
         """Multi-vector attack string."""
         attack = (
