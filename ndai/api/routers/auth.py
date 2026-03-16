@@ -30,7 +30,7 @@ async def register(request: RegisterRequest):
         "display_name": request.display_name,
     }
     token = create_access_token(user_id)
-    return TokenResponse(access_token=token)
+    return TokenResponse(access_token=token, role=request.role)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -44,4 +44,4 @@ async def login(request: LoginRequest):
             detail="Invalid credentials",
         )
     token = create_access_token(user["id"])
-    return TokenResponse(access_token=token)
+    return TokenResponse(access_token=token, role=user["role"])

@@ -49,6 +49,7 @@ Final price is ALWAYS `P* = θ·ω̂`. LLMs evaluate; the math decides.
 | Shamir SSS | `ndai/crypto/shamir.py` | (k,n)-threshold secret sharing over GF(p), 256-bit prime |
 | TEE Provider | `ndai/tee/provider.py` | Abstract TEE interface (Nitro + Simulated backends) |
 | FastAPI Backend | `ndai/api/` | REST API for inventions, agreements, negotiations |
+| Frontend | `frontend/` | React 19 + TypeScript + Tailwind, esbuild-bundled SPA |
 | ORM Models | `ndai/models/` | SQLAlchemy models for users, inventions, agreements, payments |
 
 ## Data Flow
@@ -81,4 +82,17 @@ Seller submits invention (encrypted client-side)
 - Python 3.11+, FastAPI, SQLAlchemy (async), PostgreSQL, Redis
 - AWS Nitro Enclaves (SimulatedTEEProvider for dev)
 - Claude API (Anthropic) for LLM agents
-- React frontend (planned)
+- React 19 + TypeScript + Tailwind CSS frontend (esbuild, served by FastAPI)
+
+## Frontend Architecture
+
+Hash-based SPA router, no external routing library. FastAPI serves `frontend/dist/` as static files with catch-all for SPA routes.
+
+| Layer | Files | Purpose |
+|-------|-------|---------|
+| API Client | `frontend/src/api/` | Typed fetch wrapper with JWT injection |
+| Auth | `frontend/src/contexts/AuthContext.tsx` | JWT + role in localStorage, ProtectedRoute |
+| Router | `frontend/src/routes/index.tsx` | Hash-based routing, role-based redirects |
+| Layouts | `frontend/src/layouts/` | Seller/Buyer shells with sidebar nav |
+| Pages | `frontend/src/pages/` | Dashboard, inventions, marketplace, agreements |
+| Components | `frontend/src/components/` | Shared (Card, StatusBadge), seller (InventionForm), buyer (ListingCard), negotiation (OutcomeDisplay) |

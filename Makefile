@@ -1,4 +1,4 @@
-.PHONY: install dev test lint format migrate run
+.PHONY: install dev test lint format migrate run frontend-install frontend-build frontend-dev
 
 install:
 	pip install -e .
@@ -34,3 +34,12 @@ infra-down:
 
 enclave-build:
 	cd enclave-build && ./build.sh
+
+frontend-install:
+	cd frontend && npm install
+
+frontend-build:
+	cd frontend && npm run build
+
+frontend-dev:
+	cd frontend && npm run dev

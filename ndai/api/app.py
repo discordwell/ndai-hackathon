@@ -1,9 +1,16 @@
 """FastAPI application factory."""
 
-from fastapi import FastAPI
+import os
+from pathlib import Path
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from ndai.api.routers import agreements, auth, inventions, negotiations
+
+FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
 
 def create_app() -> FastAPI:
@@ -29,5 +36,19 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health():
         return {"status": "ok"}
+
+    # Static file serving — only if frontend is built
+    if FRONTEND_DIST.exists():
+        assets_dir = FRONTEND_DIST / "assets"
+        if assets_dir.exists():
+            app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="static")
+
+        # SPA catch-all: serve index.html for all non-API routes
+        @app.get("/{path:path}")
+        async def spa_catch_all(request: Request, path: str):
+            index = FRONTEND_DIST / "index.html"
+            if index.exists():
+                return FileResponse(str(index))
+            return {"detail": "Frontend not built. Run: make frontend-build"}
 
     return app

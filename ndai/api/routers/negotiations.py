@@ -1,5 +1,9 @@
 """Negotiation trigger and status endpoints."""
 
+import asyncio
+import logging
+import traceback
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from ndai.api.dependencies import get_current_user
@@ -10,29 +14,62 @@ from ndai.enclave.negotiation.engine import SecurityParams
 from ndai.enclave.session import NegotiationSession, SessionConfig
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-# Store outcomes in memory for MVP
+# Store outcomes and status in memory for MVP
 _outcomes: dict[str, dict] = {}
+_statuses: dict[str, dict] = {}
 
 
-@router.post("/{agreement_id}/start", response_model=NegotiationOutcomeResponse)
+def _run_negotiation_sync(agreement_id: str, config: SessionConfig, agreement: dict) -> None:
+    """Run negotiation synchronously (called from background thread)."""
+    try:
+        _statuses[agreement_id] = {"status": "running"}
+        session = NegotiationSession(config)
+        result = session.run()
+
+        _outcomes[agreement_id] = {
+            "outcome": result.outcome.value,
+            "final_price": result.final_price,
+            "omega_hat": result.omega_hat,
+            "negotiation_rounds": len(session.transcript.messages),
+        }
+        agreement["status"] = f"completed_{result.outcome.value}"
+        _statuses[agreement_id] = {
+            "status": "completed",
+            "outcome": _outcomes[agreement_id],
+        }
+    except Exception as e:
+        logger.error("Negotiation failed for %s: %s", agreement_id, traceback.format_exc())
+        _statuses[agreement_id] = {
+            "status": "error",
+            "error": "Negotiation failed. Check server logs for details.",
+        }
+        agreement["status"] = "completed_error"
+
+
+@router.post("/{agreement_id}/start")
 async def start_negotiation(
     agreement_id: str,
     user_id: str = Depends(get_current_user),
 ):
     """Trigger a negotiation session for an agreement.
 
-    In production, this launches a Nitro Enclave. For MVP, it runs
-    the negotiation synchronously using the simulated TEE.
+    Returns 202 with status polling URL. The negotiation runs in a
+    background thread via asyncio.to_thread.
     """
-    # For MVP, use hardcoded test data. In production, this would
-    # look up the agreement and invention from the database.
     from ndai.api.routers.agreements import _agreements
     from ndai.api.routers.inventions import _inventions
+
+    # Prevent double-start
+    if agreement_id in _statuses and _statuses[agreement_id]["status"] in ("pending", "running"):
+        return {"status": _statuses[agreement_id]["status"]}
 
     agreement = _agreements.get(agreement_id)
     if not agreement:
         raise HTTPException(status_code=404, detail="Agreement not found")
+    if user_id not in (agreement["buyer_id"], agreement["seller_id"]):
+        raise HTTPException(status_code=403, detail="Not authorized")
 
     invention_data = _inventions.get(agreement["invention_id"])
     if not invention_data:
@@ -65,19 +102,32 @@ async def start_negotiation(
         anthropic_model=settings.anthropic_model,
     )
 
-    session = NegotiationSession(config)
-    result = session.run()
+    _statuses[agreement_id] = {"status": "pending"}
 
-    _outcomes[agreement_id] = {
-        "outcome": result.outcome.value,
-        "final_price": result.final_price,
-        "omega_hat": result.omega_hat,
-        "negotiation_rounds": len(session.transcript.messages),
-    }
+    # Run in background thread so the endpoint returns immediately
+    asyncio.create_task(
+        asyncio.to_thread(_run_negotiation_sync, agreement_id, config, agreement)
+    )
 
-    agreement["status"] = f"completed_{result.outcome.value}"
+    return {"status": "pending"}
 
-    return NegotiationOutcomeResponse(**_outcomes[agreement_id])
+
+@router.get("/{agreement_id}/status")
+async def get_status(
+    agreement_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """Poll negotiation status."""
+    from ndai.api.routers.agreements import _agreements
+
+    agreement = _agreements.get(agreement_id)
+    if agreement and user_id not in (agreement["buyer_id"], agreement["seller_id"]):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    status = _statuses.get(agreement_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="No negotiation started")
+    return status
 
 
 @router.get("/{agreement_id}/outcome", response_model=NegotiationOutcomeResponse)
@@ -85,6 +135,12 @@ async def get_outcome(
     agreement_id: str,
     user_id: str = Depends(get_current_user),
 ):
+    from ndai.api.routers.agreements import _agreements
+
+    agreement = _agreements.get(agreement_id)
+    if agreement and user_id not in (agreement["buyer_id"], agreement["seller_id"]):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
     outcome = _outcomes.get(agreement_id)
     if not outcome:
         raise HTTPException(status_code=404, detail="No outcome yet")
