@@ -1,6 +1,7 @@
 """Tests for API changes + frontend static serving."""
 
 import asyncio
+import os
 
 import asyncpg
 import pytest
@@ -10,7 +11,7 @@ from ndai.api.app import create_app
 from ndai.api.routers.negotiations import _statuses
 
 # Direct asyncpg connection for test cleanup (avoids SQLAlchemy event loop conflicts)
-_DB_URL = "postgresql://ndai:ndai@localhost:5433/ndai"
+_DB_URL = os.environ.get("DATABASE_URL", "postgresql://ndai:ndai@localhost:5432/ndai").replace("+asyncpg", "")
 _TRUNCATE_SQL = """
 TRUNCATE TABLE agreement_outcomes, audit_log, payments, agreements, inventions, users CASCADE;
 """
@@ -331,3 +332,117 @@ class TestNegotiationStatusEndpoint:
         )
         assert res.status_code == 200
         assert res.json()["status"] in ("pending", "running", "completed", "error")
+
+
+class TestAuditLog:
+    """Test audit-log and transparency endpoints."""
+
+    def _setup_confirmed_agreement(self, client, seller_token, buyer_token):
+        """Create a seller, buyer, invention, agreement, set params, and confirm."""
+        inv = client.post(
+            "/api/v1/inventions/",
+            headers=auth(seller_token),
+            json={
+                "title": "Audit Invention",
+                "full_description": "desc for audit",
+                "technical_domain": "testing",
+                "novelty_claims": ["auditable"],
+                "development_stage": "concept",
+                "self_assessed_value": 0.6,
+                "outside_option_value": 0.25,
+            },
+        ).json()
+
+        agr = client.post(
+            "/api/v1/agreements/",
+            headers=auth(buyer_token),
+            json={"invention_id": inv["id"], "budget_cap": 0.9},
+        ).json()
+
+        client.post(
+            f"/api/v1/agreements/{agr['id']}/params",
+            headers=auth(buyer_token),
+            json={"alpha_0": 0.25},
+        )
+
+        client.post(
+            f"/api/v1/agreements/{agr['id']}/confirm",
+            headers=auth(buyer_token),
+        )
+
+        return agr
+
+    def test_audit_log_returns_events(self, client, seller_token, buyer_token):
+        agr = self._setup_confirmed_agreement(client, seller_token, buyer_token)
+
+        res = client.get(
+            f"/api/v1/negotiations/{agr['id']}/audit-log",
+            headers=auth(buyer_token),
+        )
+        assert res.status_code == 200
+        entries = res.json()
+        assert isinstance(entries, list)
+        assert len(entries) >= 3
+
+        event_types = [e["event_type"] for e in entries]
+        assert "agreement_created" in event_types
+        assert "params_set" in event_types
+        assert "delegation_confirmed" in event_types
+
+    def test_transparency_404_before_negotiation(self, client, seller_token, buyer_token):
+        agr = self._setup_confirmed_agreement(client, seller_token, buyer_token)
+
+        res = client.get(
+            f"/api/v1/negotiations/{agr['id']}/transparency",
+            headers=auth(buyer_token),
+        )
+        # No outcome yet since negotiation hasn't started
+        assert res.status_code == 404
+
+
+class TestSSEStream:
+    """Test the SSE stream endpoint auth check."""
+
+    def test_stream_rejects_unauthorized(self, client, seller_token, buyer_token):
+        """Verify stream endpoint exists and rejects unauthorized access.
+
+        Create an agreement, then register a third user who is neither buyer
+        nor seller and attempt to access the stream -- should get 403.
+        """
+        inv = client.post(
+            "/api/v1/inventions/",
+            headers=auth(seller_token),
+            json={
+                "title": "Stream Auth Test",
+                "full_description": "desc",
+                "technical_domain": "test",
+                "novelty_claims": ["n"],
+                "development_stage": "concept",
+                "self_assessed_value": 0.5,
+                "outside_option_value": 0.2,
+            },
+        ).json()
+
+        agr = client.post(
+            "/api/v1/agreements/",
+            headers=auth(buyer_token),
+            json={"invention_id": inv["id"], "budget_cap": 0.8},
+        ).json()
+
+        # Register a third user who is not party to this agreement
+        third = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "third@test.com",
+                "password": "testpass123",
+                "role": "buyer",
+                "display_name": "Third Party",
+            },
+        ).json()
+        third_token = third["access_token"]
+
+        res = client.get(
+            f"/api/v1/negotiations/{agr['id']}/stream",
+            headers=auth(third_token),
+        )
+        assert res.status_code == 403
