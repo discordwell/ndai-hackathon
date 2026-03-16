@@ -8,7 +8,8 @@ to the parent on port 5001), and sends results back.
 The enclave has NO network access. All external communication goes
 through AF_VSOCK:
     Port 5000: Command channel (parent -> enclave)
-    Port 5001: LLM proxy   (enclave -> parent)
+    Port 5001: LLM proxy   (enclave -> parent) [simulated mode]
+    Port 5002: TCP tunnel   (enclave -> parent) [Nitro mode, TLS traffic]
 
 Protocol:
     Length-prefixed framing: 4-byte big-endian length header + JSON payload.
@@ -17,10 +18,14 @@ Protocol:
 Lifecycle:
     1. Parent launches enclave via nitro-cli
     2. Enclave boots and starts this app
-    3. Parent sends negotiation request on port 5000
-    4. Enclave runs NegotiationSession (LLM calls go out on port 5001)
-    5. Enclave sends result back on same port 5000 connection
-    6. Enclave waits for next request (or parent terminates it)
+    3. Enclave generates ephemeral P-384 keypair
+    4. Parent requests attestation (includes ephemeral public key)
+    5. Parent verifies attestation, encrypts API key to enclave's public key
+    6. Parent delivers encrypted API key
+    7. Parent sends negotiation request on port 5000
+    8. Enclave runs NegotiationSession (LLM calls go through tunnel on port 5002)
+    9. Enclave sends result back on same port 5000 connection
+    10. Enclave waits for next request (or parent terminates it)
 """
 
 import json
@@ -49,6 +54,41 @@ MAX_PAYLOAD_BYTES = 16 * 1024 * 1024
 
 
 # ---------------------------------------------------------------------------
+# Enclave-level state (initialized on startup)
+# ---------------------------------------------------------------------------
+
+class EnclaveState:
+    """Mutable state for the enclave application.
+
+    Holds the ephemeral keypair and decrypted API key across requests.
+    """
+
+    def __init__(self):
+        self.keypair = None  # EnclaveKeypair, set on startup
+        self.api_key: str | None = None  # Decrypted API key, set via deliver_key
+        self.nitro_mode: bool = False  # True when real NSM is available
+
+    def initialize(self):
+        """Generate ephemeral keypair and detect NSM availability."""
+        from ndai.enclave.ephemeral_keys import generate_keypair
+
+        self.keypair = generate_keypair()
+        logger.info(
+            "Ephemeral keypair generated (%d bytes DER)",
+            len(self.keypair.public_key_der),
+        )
+
+        # Detect whether we're in a real Nitro Enclave
+        from ndai.enclave.nsm import is_nsm_available
+        self.nitro_mode = is_nsm_available()
+        logger.info("Nitro mode: %s", self.nitro_mode)
+
+
+# Global enclave state (singleton for the process)
+_state = EnclaveState()
+
+
+# ---------------------------------------------------------------------------
 # Patching NegotiationSession to use the vsock LLM client
 # ---------------------------------------------------------------------------
 
@@ -58,10 +98,13 @@ class EnclaveNegotiationSession(NegotiationSession):
     The parent EC2 instance holds the API key and proxies Claude API calls.
     Inside the enclave we never see the key — we just route requests over
     vsock port 5001.
+
+    In Nitro mode with a delivered API key, uses TunnelOpenAILLMClient
+    instead, routing traffic through the encrypted TCP tunnel.
     """
 
     def __init__(self, config: SessionConfig):
-        # Skip the parent __init__ and wire up ourselves with VsockLLMClient
+        # Skip the parent __init__ and wire up ourselves with the appropriate LLM client
         from ndai.enclave.agents.buyer_agent import BuyerAgent
         from ndai.enclave.agents.seller_agent import SellerAgent
         from ndai.enclave.negotiation.engine import (
@@ -75,8 +118,8 @@ class EnclaveNegotiationSession(NegotiationSession):
         self.theta = compute_theta(config.invention.outside_option_value)
         self.transcript = SessionTranscript()
 
-        # Use vsock LLM client instead of direct Anthropic client
-        llm = VsockLLMClient(model=config.anthropic_model)
+        # Choose LLM client based on mode
+        llm = self._create_llm_client(config)
 
         self.seller_agent = SellerAgent(
             invention=config.invention,
@@ -88,6 +131,23 @@ class EnclaveNegotiationSession(NegotiationSession):
             theta=self.theta,
             llm_client=llm,
         )
+
+    @staticmethod
+    def _create_llm_client(config: SessionConfig):
+        """Create the appropriate LLM client based on enclave state."""
+        # If we have a decrypted API key (Nitro mode with key delivery),
+        # use the tunnel client for end-to-end encryption
+        if _state.api_key and _state.nitro_mode:
+            logger.info("Using TunnelOpenAILLMClient (end-to-end encrypted)")
+            from ndai.enclave.tunnel_llm_client import TunnelOpenAILLMClient
+
+            llm_provider = config.llm_provider if hasattr(config, "llm_provider") else "openai"
+            model = config.llm_model if hasattr(config, "llm_model") else config.anthropic_model
+            return TunnelOpenAILLMClient(api_key=_state.api_key, model=model)
+
+        # Fallback: vsock proxy (parent decrypts and re-encrypts — less secure)
+        logger.info("Using VsockLLMClient (vsock proxy mode)")
+        return VsockLLMClient(model=config.anthropic_model)
 
 
 # ---------------------------------------------------------------------------
@@ -116,11 +176,13 @@ def _parse_negotiation_request(data: dict[str, Any]) -> SessionConfig:
         "budget_cap": 0.5,
         "security_params": {"k": 3, "p": 0.5, "c": 1.0, "gamma": 1.0},
         "max_rounds": 5,
+        "llm_provider": "openai",
+        "llm_model": "gpt-4o",
         "anthropic_model": "claude-sonnet-4-20250514"
     }
 
-    Note: anthropic_api_key is NOT included — the enclave never sees it.
-    The VsockLLMClient routes through the parent proxy which holds the key.
+    Note: API key is NOT included — it's either delivered via deliver_key
+    (Nitro mode) or held by the parent proxy (simulated mode).
     """
     inv_data = data["invention"]
     invention = InventionSubmission(
@@ -150,6 +212,8 @@ def _parse_negotiation_request(data: dict[str, Any]) -> SessionConfig:
         budget_cap=float(data["budget_cap"]),
         security_params=security_params,
         max_rounds=int(data.get("max_rounds", 5)),
+        llm_provider=data.get("llm_provider", "anthropic"),
+        llm_model=data.get("llm_model", data.get("anthropic_model", "claude-sonnet-4-20250514")),
         anthropic_api_key="",  # Never sent into the enclave
         anthropic_model=data.get("anthropic_model", "claude-sonnet-4-20250514"),
     )
@@ -212,6 +276,8 @@ def _handle_request(request: dict[str, Any]) -> dict[str, Any]:
         return _handle_negotiate(request)
     elif action == "get_attestation":
         return _handle_attestation(request)
+    elif action == "deliver_key":
+        return _handle_deliver_key(request)
     elif action == "ping":
         return {"status": "ok", "action": "pong"}
     else:
@@ -257,36 +323,131 @@ def _handle_negotiate(request: dict[str, Any]) -> dict[str, Any]:
 def _handle_attestation(request: dict[str, Any]) -> dict[str, Any]:
     """Generate an attestation document.
 
-    Uses the Nitro Security Module (NSM) device at /dev/nsm when available.
-    Falls back to a stub for development.
+    Uses the real Nitro Security Module (/dev/nsm) when available.
+    Falls back to NSMStub for development.
+
+    The ephemeral public key is embedded in the attestation document
+    so the parent can encrypt the API key for secure delivery.
     """
     nonce_hex = request.get("nonce")
+    nonce = bytes.fromhex(nonce_hex) if nonce_hex else None
+
+    # Get the public key to embed in attestation
+    public_key_der = None
+    if _state.keypair:
+        public_key_der = _state.keypair.public_key_der
+
+    if _state.nitro_mode:
+        return _handle_attestation_nsm(nonce, public_key_der)
+    else:
+        return _handle_attestation_stub(nonce, public_key_der)
+
+
+def _handle_attestation_nsm(
+    nonce: bytes | None,
+    public_key_der: bytes | None,
+) -> dict[str, Any]:
+    """Generate attestation using the real NSM device."""
+    try:
+        from ndai.enclave.nsm import NSMDevice
+
+        with NSMDevice() as nsm:
+            attestation_doc = nsm.get_attestation(
+                public_key=public_key_der,
+                nonce=nonce,
+            )
+
+        import base64
+        return {
+            "status": "ok",
+            "attestation_doc": base64.b64encode(attestation_doc).decode("ascii"),
+            "format": "cose_sign1",
+        }
+    except Exception as exc:
+        logger.error("NSM attestation failed: %s", exc)
+        return {
+            "status": "error",
+            "error": f"NSM attestation failed: {exc}",
+        }
+
+
+def _handle_attestation_stub(
+    nonce: bytes | None,
+    public_key_der: bytes | None,
+) -> dict[str, Any]:
+    """Generate attestation using the NSMStub (development mode)."""
+    try:
+        from ndai.enclave.nsm_stub import NSMStub
+
+        stub = NSMStub()
+        attestation_doc = stub.get_attestation(
+            public_key=public_key_der,
+            nonce=nonce,
+        )
+
+        import base64
+        return {
+            "status": "ok",
+            "attestation_doc": base64.b64encode(attestation_doc).decode("ascii"),
+            "format": "cose_sign1",
+        }
+    except Exception as exc:
+        logger.error("Stub attestation failed: %s", exc)
+        # Fall back to legacy stub format for backwards compatibility
+        logger.warning("Falling back to legacy stub attestation")
+        return {
+            "status": "ok",
+            "attestation": "stub_attestation_no_nsm",
+            "nonce": nonce.hex() if nonce else None,
+        }
+
+
+def _handle_deliver_key(request: dict[str, Any]) -> dict[str, Any]:
+    """Receive and decrypt an API key encrypted to our ephemeral public key.
+
+    Expected request:
+    {
+        "action": "deliver_key",
+        "encrypted_key": "<base64-encoded ECIES ciphertext>"
+    }
+    """
+    if _state.keypair is None:
+        return {
+            "status": "error",
+            "error": "No keypair available — enclave not initialized",
+        }
+
+    encrypted_b64 = request.get("encrypted_key")
+    if not encrypted_b64:
+        return {
+            "status": "error",
+            "error": "Missing encrypted_key field",
+        }
 
     try:
-        # Try the real NSM device (only available inside a Nitro Enclave)
-        import ctypes
-        import ctypes.util
+        import base64
+        from ndai.enclave.ephemeral_keys import decrypt_api_key
 
-        nsm_lib = ctypes.util.find_library("nsm")
-        if nsm_lib:
-            logger.info("Generating attestation via NSM (nonce=%s)", nonce_hex)
-            # In production this would call the NSM C library
-            # For now return a placeholder indicating NSM is available
-            return {
-                "status": "ok",
-                "attestation": "nsm_attestation_placeholder",
-                "nonce": nonce_hex,
-            }
-    except Exception:
-        pass
+        encrypted_payload = base64.b64decode(encrypted_b64)
+        _state.api_key = decrypt_api_key(
+            _state.keypair.private_key,
+            encrypted_payload,
+        )
 
-    # Stub attestation for development/testing
-    logger.warning("NSM not available — returning stub attestation")
-    return {
-        "status": "ok",
-        "attestation": "stub_attestation_no_nsm",
-        "nonce": nonce_hex,
-    }
+        # Log success without revealing the key
+        logger.info(
+            "API key delivered successfully (%d chars, starts with %s...)",
+            len(_state.api_key),
+            _state.api_key[:7] if len(_state.api_key) > 7 else "***",
+        )
+        return {"status": "ok"}
+
+    except Exception as exc:
+        logger.error("Failed to decrypt API key: %s", exc)
+        return {
+            "status": "error",
+            "error": f"Key delivery failed: {exc}",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -300,6 +461,9 @@ def serve(port: int = COMMAND_PORT) -> None:
     carries exactly one request/response pair (matching the NitroEnclaveProvider
     protocol where the parent opens a new connection per message).
     """
+    # Initialize enclave state (keypair generation)
+    _state.initialize()
+
     server = socket.socket(AF_VSOCK, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind((VMADDR_CID_ANY, port))

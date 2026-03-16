@@ -10,11 +10,12 @@ These tests run without actual AF_VSOCK sockets by mocking at the
 socket/transport level.
 """
 
+import asyncio
 import json
 import socket
 import struct
 from dataclasses import asdict
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -511,16 +512,61 @@ class TestEnclaveApp:
 
     def test_handle_attestation_stub(self):
         """Attestation returns stub when NSM is unavailable."""
-        from ndai.enclave.app import _handle_attestation
+        from ndai.enclave.app import _handle_attestation, _state
+
+        # Ensure state is initialized (keypair generated)
+        _state.initialize()
+        _state.nitro_mode = False  # Force stub mode
 
         result = _handle_attestation({"nonce": "abc123"})
         assert result["status"] == "ok"
-        assert result["nonce"] == "abc123"
+        # New format returns attestation_doc (base64 COSE Sign1) or legacy format
+        assert "attestation_doc" in result or "attestation" in result
+
+    def test_handle_deliver_key(self):
+        """Encrypted API key should be decryptable by enclave."""
+        import base64
+
+        from ndai.enclave.app import _handle_deliver_key, _handle_request, _state
+        from ndai.enclave.ephemeral_keys import encrypt_api_key
+
+        _state.initialize()
+        _state.api_key = None  # Reset
+
+        # Encrypt a test API key for the enclave's public key
+        api_key = "sk-test-deliver-123"
+        encrypted = encrypt_api_key(_state.keypair.public_key_der, api_key)
+        b64_payload = base64.b64encode(encrypted).decode("ascii")
+
+        result = _handle_request({
+            "action": "deliver_key",
+            "encrypted_key": b64_payload,
+        })
+        assert result["status"] == "ok"
+        assert _state.api_key == api_key
+
+    def test_handle_deliver_key_no_keypair(self):
+        """Key delivery without keypair should fail."""
+        from ndai.enclave.app import _handle_deliver_key, _state
+
+        saved_kp = _state.keypair
+        _state.keypair = None
+        try:
+            result = _handle_deliver_key({"encrypted_key": "dGVzdA=="})
+            assert result["status"] == "error"
+            assert "keypair" in result["error"].lower() or "not initialized" in result["error"].lower()
+        finally:
+            _state.keypair = saved_kp
 
     def test_enclave_negotiation_session_uses_vsock_client(self):
-        """EnclaveNegotiationSession uses VsockLLMClient, not LLMClient."""
-        from ndai.enclave.app import EnclaveNegotiationSession
+        """EnclaveNegotiationSession uses VsockLLMClient in non-Nitro mode."""
+        from ndai.enclave.app import EnclaveNegotiationSession, _state
         from ndai.enclave.vsock_llm_client import VsockLLMClient
+
+        # Ensure we're in non-Nitro mode with no API key
+        _state.initialize()
+        _state.nitro_mode = False
+        _state.api_key = None
 
         config = SessionConfig(
             invention=_make_invention(),
@@ -702,3 +748,140 @@ class TestRoundTrip:
         assert msg.content[1].input["price"] == 0.42
         assert msg.stop_reason == "tool_use"
         assert msg.usage.input_tokens == 200
+
+
+# ---------------------------------------------------------------------------
+# NitroEnclaveProvider single-connection protocol tests
+# ---------------------------------------------------------------------------
+
+class TestNitroEnclaveProviderProtocol:
+    """Verify send_message/receive_message use a single vsock connection.
+
+    The enclave app uses single-connection request-response: it accepts one
+    connection, reads the request, writes the response, and closes. The
+    provider must keep the connection open between send and receive.
+    """
+
+    def _make_provider_with_enclave(self):
+        """Set up a NitroEnclaveProvider with a fake active enclave."""
+        from ndai.tee.nitro_provider import NitroEnclaveProvider
+        from ndai.tee.provider import EnclaveConfig, EnclaveIdentity, TEEType
+
+        provider = NitroEnclaveProvider()
+        identity = EnclaveIdentity(
+            enclave_id="enc-test-123",
+            enclave_cid=42,
+            pcr0="aaa",
+            pcr1="bbb",
+            pcr2="ccc",
+            tee_type=TEEType.NITRO,
+        )
+        config = EnclaveConfig(cpu_count=2, memory_mib=1600, eif_path="test.eif")
+        provider._active_enclaves["enc-test-123"] = identity
+        provider._enclave_configs["enc-test-123"] = config
+        return provider
+
+    @pytest.mark.asyncio
+    async def test_send_message_stores_connection(self):
+        """send_message should open a socket and store it for receive_message."""
+        provider = self._make_provider_with_enclave()
+
+        mock_sock = MagicMock(spec=socket.socket)
+        with patch("ndai.tee.nitro_provider.socket.socket", return_value=mock_sock):
+            await provider.send_message("enc-test-123", {"action": "ping"})
+
+        # Connection should be stored
+        assert "enc-test-123" in provider._connections
+        assert provider._connections["enc-test-123"] is mock_sock
+        # Socket should NOT have been closed
+        mock_sock.close.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_receive_message_uses_stored_connection(self):
+        """receive_message should read from the socket opened by send_message."""
+        provider = self._make_provider_with_enclave()
+
+        # Prepare a response frame
+        response_data = {"status": "ok", "action": "pong"}
+        payload = json.dumps(response_data).encode("utf-8")
+        frame = struct.pack(">I", len(payload)) + payload
+
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.side_effect = [frame[:4], payload]
+
+        # Simulate send_message having stored the connection
+        provider._connections["enc-test-123"] = mock_sock
+
+        result = await provider.receive_message("enc-test-123")
+
+        assert result == response_data
+        # Connection should have been removed and closed
+        assert "enc-test-123" not in provider._connections
+        mock_sock.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_receive_without_send_raises(self):
+        """receive_message without prior send_message should raise."""
+        from ndai.tee.provider import TEEError
+
+        provider = self._make_provider_with_enclave()
+
+        with pytest.raises(TEEError, match="No open connection"):
+            await provider.receive_message("enc-test-123")
+
+    @pytest.mark.asyncio
+    async def test_send_receive_same_socket(self):
+        """send_message and receive_message must use the same socket object."""
+        provider = self._make_provider_with_enclave()
+
+        response_data = {"status": "ok", "result": {"outcome": "agreement"}}
+        payload = json.dumps(response_data).encode("utf-8")
+        frame = struct.pack(">I", len(payload)) + payload
+
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.side_effect = [frame[:4], payload]
+
+        with patch("ndai.tee.nitro_provider.socket.socket", return_value=mock_sock):
+            await provider.send_message("enc-test-123", {"action": "negotiate"})
+            stored_sock = provider._connections["enc-test-123"]
+            result = await provider.receive_message("enc-test-123")
+
+        # The socket used for receive must be the same one from send
+        assert stored_sock is mock_sock
+        assert result == response_data
+
+    @pytest.mark.asyncio
+    async def test_send_closes_stale_connection(self):
+        """A second send_message should close the previous connection."""
+        provider = self._make_provider_with_enclave()
+
+        stale_sock = MagicMock(spec=socket.socket)
+        provider._connections["enc-test-123"] = stale_sock
+
+        new_sock = MagicMock(spec=socket.socket)
+        with patch("ndai.tee.nitro_provider.socket.socket", return_value=new_sock):
+            await provider.send_message("enc-test-123", {"action": "ping"})
+
+        # Stale connection should have been closed
+        stale_sock.close.assert_called_once()
+        # New connection should be stored
+        assert provider._connections["enc-test-123"] is new_sock
+
+    @pytest.mark.asyncio
+    async def test_terminate_closes_connection(self):
+        """terminate_enclave should close any stored connection."""
+        provider = self._make_provider_with_enclave()
+
+        mock_sock = MagicMock(spec=socket.socket)
+        provider._connections["enc-test-123"] = mock_sock
+
+        with patch("asyncio.create_subprocess_exec") as mock_exec:
+            mock_proc = AsyncMock()
+            mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+            mock_proc.returncode = 0
+            mock_exec.return_value = mock_proc
+
+            await provider.terminate_enclave("enc-test-123")
+
+        mock_sock.close.assert_called_once()
+        assert "enc-test-123" not in provider._connections

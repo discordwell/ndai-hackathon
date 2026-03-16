@@ -302,8 +302,16 @@ class OpenAILLMClient:
     extract_text, and _clean_messages.
     """
 
-    def __init__(self, api_key: str, model: str = "gpt-4o"):
-        self.client = openai.OpenAI(api_key=api_key)
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gpt-4o",
+        http_client: "httpx.Client | None" = None,
+    ):
+        kwargs: dict[str, Any] = {"api_key": api_key}
+        if http_client is not None:
+            kwargs["http_client"] = http_client
+        self.client = openai.OpenAI(**kwargs)
         self.model = model
 
     def create_message(

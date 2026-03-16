@@ -2,17 +2,25 @@
 
 Manages the full lifecycle of a negotiation running inside a TEE:
 1. Launch enclave via TEEProvider
-2. Start vsock LLM proxy (Nitro mode only)
-3. Verify attestation
-4. Send negotiation inputs to the enclave
-5. Wait for the negotiation result
-6. Terminate the enclave (always, even on error)
+2. Start vsock LLM proxy OR TCP tunnel (Nitro mode)
+3. Verify attestation (with COSE signature verification in Nitro mode)
+4. Encrypt and deliver API key to enclave (Nitro mode)
+5. Send negotiation inputs to the enclave
+6. Wait for the negotiation result
+7. Terminate the enclave (always, even on error)
 
 For SimulatedTEEProvider, the negotiation runs in-process via NegotiationSession
 since there is no real enclave to communicate with.
+
+Security model (Nitro mode):
+- Attestation includes enclave's ephemeral public key (COSE-signed by NSM)
+- Parent encrypts API key to enclave's public key (ECIES)
+- LLM traffic goes through TCP tunnel (parent sees only TLS ciphertext)
+- Parent never has access to invention data or decrypted API key
 """
 
 import asyncio
+import base64
 import logging
 import os
 import time
@@ -56,7 +64,7 @@ class EnclaveNegotiationConfig:
     security_params: SecurityParams
     max_rounds: int = 5
     llm_provider: str = "anthropic"  # "anthropic" or "openai"
-    api_key: str = ""  # Stays on parent, never enters enclave
+    api_key: str = ""  # Stays on parent, never enters enclave in plaintext
     llm_model: str = "claude-sonnet-4-20250514"
     # Legacy aliases (kept for backwards compatibility)
     anthropic_api_key: str = ""
@@ -89,14 +97,12 @@ class EnclaveOrchestrator:
 
         Steps:
             1. Launch enclave
-            2. Start LLM proxy (Nitro only)
-            3. Verify attestation
-            4. Send inputs (invention data, security params, budget cap)
-            5. Wait for result
-            6. Terminate enclave
-
-        The API key never enters the enclave. In Nitro mode, the vsock LLM
-        proxy on the parent side forwards LLM requests using the key.
+            2. Start LLM proxy/tunnel
+            3. Verify attestation (COSE signature + cert chain in Nitro mode)
+            4. Deliver API key (encrypted to enclave's ephemeral public key)
+            5. Send negotiation inputs
+            6. Wait for result
+            7. Terminate enclave
 
         Args:
             config: Full negotiation configuration including invention,
@@ -237,12 +243,20 @@ class EnclaveOrchestrator:
     ) -> NegotiationResult:
         """Run negotiation inside a real Nitro Enclave.
 
-        Communicates with the enclave over vsock using length-prefixed JSON.
-        The LLM proxy runs on the parent and forwards API calls.
+        Secure flow:
+        1. Launch enclave
+        2. Start TCP tunnel (replaces old JSON proxy)
+        3. Request attestation (includes enclave's ephemeral public key)
+        4. Verify COSE signature + cert chain to AWS root CA
+        5. Encrypt API key to enclave's public key (ECIES)
+        6. Deliver encrypted API key
+        7. Send negotiation inputs
+        8. Wait for result
+        9. Terminate
         """
         enclave_config = config.enclave_config or self._default_enclave_config()
         identity: EnclaveIdentity | None = None
-        proxy = None
+        tunnel = None
         start_time = time.monotonic()
 
         try:
@@ -260,31 +274,47 @@ class EnclaveOrchestrator:
                 identity.enclave_cid,
             )
 
-            # Step 2: Start vsock LLM proxy
-            nitro_api_key = config.api_key or config.anthropic_api_key
-            proxy = await self._start_llm_proxy(
-                identity.enclave_cid, nitro_api_key
+            # Step 2: Start TCP tunnel (replaces old LLM proxy)
+            tunnel = await self._start_tunnel(identity.enclave_cid)
+
+            # Step 3: Request attestation
+            nonce = os.urandom(32)
+            # Request attestation through the provider
+            attestation_response = await self._request_attestation(
+                identity.enclave_id, nonce
             )
 
-            # Step 3: Verify attestation
-            nonce = os.urandom(32)
-            attestation_doc = await self._provider.get_attestation(
-                identity.enclave_id, nonce=nonce
-            )
+            # Step 4: Verify attestation with full COSE verification
             attestation = verify_attestation(
-                attestation_doc,
+                attestation_response,
                 expected_pcrs=config.expected_pcrs,
                 nonce=nonce,
             )
             self._check_attestation(attestation)
             logger.info(
-                "Nitro attestation verified (pcrs=%s)",
+                "Nitro attestation verified (pcrs=%s, has_pubkey=%s)",
                 {k: v[:16] + "..." for k, v in attestation.pcrs.items()},
+                attestation.enclave_public_key is not None,
             )
 
-            # Step 4: Send negotiation inputs to the enclave
-            # NOTE: anthropic_api_key is intentionally excluded — it stays on
-            # the parent side. The enclave reaches the LLM via the vsock proxy.
+            # Step 5+6: Encrypt and deliver API key
+            nitro_api_key = config.api_key or config.anthropic_api_key
+            if nitro_api_key and attestation.enclave_public_key:
+                await self._deliver_api_key(
+                    identity.enclave_id,
+                    nitro_api_key,
+                    attestation.enclave_public_key,
+                )
+            elif nitro_api_key:
+                logger.warning(
+                    "Attestation has no public key; falling back to proxy mode"
+                )
+                # Fall back to old proxy mode
+                proxy = await self._start_llm_proxy(
+                    identity.enclave_cid, nitro_api_key
+                )
+
+            # Step 7: Send negotiation inputs to the enclave
             negotiate_msg = {
                 "action": "negotiate",
                 "invention": {
@@ -315,7 +345,7 @@ class EnclaveOrchestrator:
             logger.info("Sending negotiation inputs to enclave")
             await self._provider.send_message(identity.enclave_id, negotiate_msg)
 
-            # Step 5: Wait for result with timeout
+            # Step 8: Wait for result with timeout
             timeout = self._settings.negotiation_timeout_sec
             logger.info("Waiting for enclave result (timeout=%ds)", timeout)
 
@@ -356,13 +386,16 @@ class EnclaveOrchestrator:
                 f"Nitro negotiation failed: {exc}"
             ) from exc
         finally:
-            # Step 6: Always clean up
-            if proxy is not None:
+            # Step 9: Always clean up
+            if tunnel is not None:
                 try:
-                    await proxy.stop()
-                    logger.info("LLM proxy stopped")
-                except Exception as proxy_exc:
-                    logger.warning("Failed to stop LLM proxy: %s", proxy_exc)
+                    await tunnel.stop()
+                    logger.info(
+                        "TCP tunnel stopped (%d bytes forwarded)",
+                        tunnel.bytes_forwarded,
+                    )
+                except Exception as tunnel_exc:
+                    logger.warning("Failed to stop tunnel: %s", tunnel_exc)
 
             if identity is not None:
                 try:
@@ -375,11 +408,34 @@ class EnclaveOrchestrator:
                         term_exc,
                     )
 
+    async def _start_tunnel(self, enclave_cid: int):
+        """Start the TCP tunnel for Nitro mode.
+
+        The tunnel forwards raw bytes between the enclave's vsock and
+        remote TCP hosts. The enclave performs TLS itself.
+
+        Returns:
+            A VsockTunnel instance (with a stop() method for cleanup).
+        """
+        try:
+            from ndai.enclave.vsock_tunnel import VsockTunnel
+        except ImportError as exc:
+            raise OrchestrationError(
+                "vsock_tunnel module not available. Ensure ndai.enclave.vsock_tunnel "
+                "is installed for Nitro mode."
+            ) from exc
+
+        tunnel = VsockTunnel()
+        await tunnel.run_background()
+        logger.info("TCP tunnel started for enclave cid=%d", enclave_cid)
+        return tunnel
+
     async def _start_llm_proxy(self, enclave_cid: int, api_key: str):
-        """Start the vsock LLM proxy for Nitro mode.
+        """Start the vsock LLM proxy for Nitro mode (fallback).
 
         The proxy forwards LLM API requests from the enclave to Anthropic,
-        keeping the API key on the parent side.
+        keeping the API key on the parent side. Less secure than tunnel mode
+        because the parent sees plaintext.
 
         Returns:
             A VsockLLMProxy instance (with a stop() method for cleanup).
@@ -396,6 +452,64 @@ class EnclaveOrchestrator:
         await proxy.run_background()
         logger.info("LLM proxy started for enclave cid=%d", enclave_cid)
         return proxy
+
+    async def _request_attestation(
+        self,
+        enclave_id: str,
+        nonce: bytes,
+    ) -> bytes:
+        """Request attestation from the enclave and extract the raw document.
+
+        The enclave returns the attestation document as base64-encoded COSE Sign1.
+        """
+        attest_msg = {
+            "action": "get_attestation",
+            "nonce": nonce.hex(),
+        }
+        await self._provider.send_message(enclave_id, attest_msg)
+        response = await self._provider.receive_message(enclave_id)
+
+        if response.get("status") != "ok":
+            error = response.get("error", "Unknown attestation error")
+            raise AttestationError(f"Enclave attestation request failed: {error}")
+
+        # Handle new format (base64-encoded COSE Sign1)
+        attestation_b64 = response.get("attestation_doc")
+        if attestation_b64:
+            return base64.b64decode(attestation_b64)
+
+        # Handle legacy format (raw JSON attestation from simulated provider)
+        attestation_doc = await self._provider.get_attestation(enclave_id, nonce=nonce)
+        return attestation_doc
+
+    async def _deliver_api_key(
+        self,
+        enclave_id: str,
+        api_key: str,
+        enclave_public_key_der: bytes,
+    ) -> None:
+        """Encrypt the API key and deliver it to the enclave.
+
+        The key is encrypted using ECIES with the enclave's ephemeral public
+        key (extracted from the verified attestation document).
+        """
+        from ndai.enclave.ephemeral_keys import encrypt_api_key
+
+        logger.info("Encrypting API key for enclave delivery")
+        encrypted = encrypt_api_key(enclave_public_key_der, api_key)
+
+        deliver_msg = {
+            "action": "deliver_key",
+            "encrypted_key": base64.b64encode(encrypted).decode("ascii"),
+        }
+        await self._provider.send_message(enclave_id, deliver_msg)
+        response = await self._provider.receive_message(enclave_id)
+
+        if response.get("status") != "ok":
+            error = response.get("error", "Unknown key delivery error")
+            raise OrchestrationError(f"API key delivery failed: {error}")
+
+        logger.info("API key delivered to enclave successfully")
 
     def _check_attestation(self, result: AttestationResult) -> None:
         """Raise AttestationError if attestation verification failed."""

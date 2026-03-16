@@ -29,6 +29,10 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install ca-certificates for TLS verification inside enclave (tunnel mode)
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 

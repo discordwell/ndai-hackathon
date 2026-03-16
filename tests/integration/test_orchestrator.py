@@ -290,6 +290,9 @@ class TestOrchestratorNitroMode:
         self, neg_config, test_settings
     ):
         """Verify the message sent to the enclave has correct structure and no API key."""
+        import base64
+        import json
+
         from ndai.tee.provider import EnclaveIdentity, TEEProvider, TEEType
 
         provider = AsyncMock(spec=TEEProvider)
@@ -306,39 +309,64 @@ class TestOrchestratorNitroMode:
         )
         provider.launch_enclave.return_value = identity
 
-        # Attestation returns simulated-format JSON for testing convenience.
-        # The orchestrator generates a random nonce, so we control it via patch.
-        import json
+        # The new Nitro flow: orchestrator sends get_attestation action to
+        # the enclave via send_message/receive_message, and the enclave
+        # returns a base64-encoded COSE Sign1 attestation doc.
+        # Then it sends deliver_key, then the negotiation.
         fixed_nonce = b"\x00" * 32
-        attestation = json.dumps({
+
+        # Build a stub attestation doc using NSMStub
+        from ndai.enclave.nsm_stub import NSMStub
+        stub = NSMStub(eif_path="test.eif")
+        attestation_doc = stub.get_attestation(nonce=fixed_nonce)
+        attestation_b64 = base64.b64encode(attestation_doc).decode("ascii")
+
+        # Also prepare the legacy provider.get_attestation for fallback
+        attestation_json = json.dumps({
             "type": "simulated_attestation",
             "enclave_id": "nitro-test",
-            "pcr0": "aa",
-            "pcr1": "bb",
-            "pcr2": "cc",
+            "pcr0": "aa", "pcr1": "bb", "pcr2": "cc",
             "nonce": fixed_nonce.hex(),
             "warning": "SIMULATED",
         }).encode()
-        provider.get_attestation.return_value = attestation
+        provider.get_attestation.return_value = attestation_json
 
-        # Enclave response
-        provider.receive_message.return_value = {
-            "outcome": "agreement",
-            "final_price": 0.3,
-            "omega_hat": 0.5,
-            "theta": 0.65,
-            "phi": 100.0,
-            "seller_payoff": 0.4,
-            "buyer_payoff": 0.2,
-            "reason": "Deal",
-        }
+        # Sequence of receive_message calls:
+        # 1. Attestation response (from _request_attestation)
+        # 2. Key delivery response (from _deliver_api_key) — only if pubkey present
+        # 3. Negotiation result (from _run_nitro)
+        # Since stub attestation doesn't embed a public key by default,
+        # the orchestrator falls back to proxy mode.
+        receive_side_effects = [
+            # 1. Attestation response — no attestation_doc, triggers fallback
+            {"status": "ok"},
+            # 2. Negotiation result
+            {
+                "status": "ok",
+                "result": {
+                    "outcome": "agreement",
+                    "final_price": 0.3,
+                    "omega_hat": 0.5,
+                    "theta": 0.65,
+                    "phi": 100.0,
+                    "seller_payoff": 0.4,
+                    "buyer_payoff": 0.2,
+                    "reason": "Deal",
+                },
+            },
+        ]
+        provider.receive_message.side_effect = receive_side_effects
 
         orchestrator = EnclaveOrchestrator(provider=provider, settings=test_settings)
 
         with (
             patch("ndai.tee.orchestrator.os.urandom", return_value=fixed_nonce),
+            patch("ndai.tee.orchestrator.EnclaveOrchestrator._start_tunnel") as mock_tunnel,
             patch("ndai.tee.orchestrator.EnclaveOrchestrator._start_llm_proxy") as mock_proxy,
         ):
+            mock_tunnel_instance = AsyncMock()
+            mock_tunnel_instance.bytes_forwarded = 0
+            mock_tunnel.return_value = mock_tunnel_instance
             mock_proxy_instance = AsyncMock()
             mock_proxy.return_value = mock_proxy_instance
 
@@ -346,30 +374,36 @@ class TestOrchestratorNitroMode:
 
         assert result.outcome == NegotiationOutcomeType.AGREEMENT
 
-        # Check the message sent to the enclave
-        sent_msg = provider.send_message.call_args[0][1]
-        assert sent_msg["action"] == "negotiate"
-        assert sent_msg["invention"]["title"] == "Test Invention"
-        assert sent_msg["budget_cap"] == 1.0
-        assert sent_msg["security_params"]["k"] == 3
-        assert sent_msg["max_rounds"] == 2
-        assert sent_msg["llm_model"] == "claude-sonnet-4-20250514"
+        # Find the negotiate message among all send_message calls
+        negotiate_msg = None
+        for call in provider.send_message.call_args_list:
+            msg = call[0][1]
+            if msg.get("action") == "negotiate":
+                negotiate_msg = msg
+                break
+        assert negotiate_msg is not None
+
+        assert negotiate_msg["invention"]["title"] == "Test Invention"
+        assert negotiate_msg["budget_cap"] == 1.0
+        assert negotiate_msg["security_params"]["k"] == 3
+        assert negotiate_msg["max_rounds"] == 2
+        assert negotiate_msg["llm_model"] == "claude-sonnet-4-20250514"
 
         # API key must NOT be in the message to the enclave
-        assert "anthropic_api_key" not in sent_msg
-        assert "api_key" not in sent_msg
+        assert "anthropic_api_key" not in negotiate_msg
+        assert "api_key" not in negotiate_msg
 
-        # Proxy started and stopped
-        mock_proxy.assert_called_once()
-        mock_proxy_instance.stop.assert_called_once()
+        # Tunnel started and stopped
+        mock_tunnel.assert_called_once()
+        mock_tunnel_instance.stop.assert_called_once()
 
         # Enclave terminated
         provider.terminate_enclave.assert_called_once_with("nitro-test")
 
-    async def test_nitro_terminates_on_proxy_import_error(
+    async def test_nitro_terminates_on_tunnel_import_error(
         self, neg_config, test_settings
     ):
-        """If vsock_proxy import fails, enclave is still terminated."""
+        """If vsock_tunnel import fails, enclave is still terminated."""
         from ndai.tee.provider import EnclaveIdentity, TEEType
 
         provider = AsyncMock()
@@ -385,29 +419,13 @@ class TestOrchestratorNitroMode:
         )
         provider.launch_enclave.return_value = identity
 
-        import json
-        fixed_nonce = b"\x00" * 32
-        attestation = json.dumps({
-            "type": "simulated_attestation",
-            "enclave_id": "nitro-cleanup",
-            "pcr0": "aa",
-            "pcr1": "bb",
-            "pcr2": "cc",
-            "nonce": fixed_nonce.hex(),
-            "warning": "SIMULATED",
-        }).encode()
-        provider.get_attestation.return_value = attestation
-
         orchestrator = EnclaveOrchestrator(provider=provider, settings=test_settings)
 
-        with (
-            patch("ndai.tee.orchestrator.os.urandom", return_value=fixed_nonce),
-            patch(
-                "ndai.tee.orchestrator.EnclaveOrchestrator._start_llm_proxy",
-                side_effect=OrchestrationError("vsock_proxy not available"),
-            ),
+        with patch(
+            "ndai.tee.orchestrator.EnclaveOrchestrator._start_tunnel",
+            side_effect=OrchestrationError("vsock_tunnel not available"),
         ):
-            with pytest.raises(OrchestrationError, match="vsock_proxy"):
+            with pytest.raises(OrchestrationError, match="vsock_tunnel"):
                 await orchestrator.run_negotiation(neg_config)
 
         # Enclave must still be terminated

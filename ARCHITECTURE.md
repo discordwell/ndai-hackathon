@@ -21,7 +21,7 @@ Frontend (React) → FastAPI Backend → Parent EC2 Instance → Nitro Enclave
 **Inside enclave** (secure): AI agents, negotiation engine, invention plaintext, Shamir reconstruction.
 **Outside enclave** (untrusted): API, database, frontend, enclave orchestrator.
 
-The parent instance proxies Claude API calls via vsock. The API key stays on the parent side and never enters the enclave. Note: the parent currently sees plaintext API traffic; enclave-side TLS termination is planned for a future phase.
+In Nitro mode, the enclave performs TLS directly through a TCP tunnel — the parent only sees encrypted ciphertext. The API key is delivered via ECIES encryption to the enclave's attestation-bound ephemeral public key. In simulated mode, the parent proxies Claude API calls via vsock (parent sees plaintext; no security guarantees).
 
 ## Core Mechanism
 
@@ -50,6 +50,13 @@ Both agents' decisions affect the final price. The seller controls `ω̂` (discl
 | Session Orchestrator | `ndai/enclave/session.py` | Wires agents + engine into complete negotiation lifecycle |
 | Shamir SSS | `ndai/crypto/shamir.py` | (k,n)-threshold secret sharing over GF(p), 256-bit prime |
 | TEE Provider | `ndai/tee/provider.py` | Abstract TEE interface (Nitro + Simulated backends) |
+| NSM Interface | `ndai/enclave/nsm.py` | Real `/dev/nsm` ioctl for attestation documents |
+| NSM Stub | `ndai/enclave/nsm_stub.py` | Self-signed COSE Sign1 for local development |
+| Ephemeral Keys | `ndai/enclave/ephemeral_keys.py` | P-384 keypair + ECIES encryption for key delivery |
+| Attestation | `ndai/tee/attestation.py` | COSE Sign1 verification, cert chain, PCR + nonce checks |
+| TCP Tunnel | `ndai/enclave/vsock_tunnel.py` | Parent-side raw byte forwarder (enclave does TLS) |
+| Tunnel LLM Client | `ndai/enclave/tunnel_llm_client.py` | Enclave-side httpx transport through tunnel |
+| Nitro Root Cert | `ndai/tee/nitro_root_cert.py` | Bundled AWS Nitro Attestation PKI root CA |
 | FastAPI Backend | `ndai/api/` | REST API for inventions, agreements, negotiations |
 | Frontend | `frontend/` | React 19 + TypeScript + Tailwind, esbuild-bundled SPA |
 | ORM Models | `ndai/models/` | SQLAlchemy models for users, inventions, agreements, payments |
@@ -74,9 +81,20 @@ Seller submits invention (encrypted client-side)
 ## Security Model
 
 - **Shamir SSS**: Invention encryption key split into n shares (k-of-n threshold)
-- **Attestation**: PCR values verify enclave code identity before disclosure
-- **vsock proxy**: Claude API calls routed through parent (parent sees plaintext; enclave-side TLS is future work)
+- **NSM Attestation**: Real `/dev/nsm` ioctl produces COSE Sign1 attestation documents, verified against AWS Nitro root CA with full certificate chain validation, nonce freshness, and PCR matching
+- **Encrypted API Key Delivery**: Enclave generates ephemeral P-384 keypair on startup; public key embedded in attestation document; parent encrypts API key via ECIES (ECDH + HKDF-SHA384 + AES-256-GCM) to enclave's public key; enclave decrypts with private key — parent never has the key in enclave-readable form
+- **Enclave TLS (TCP Tunnel)**: In Nitro mode, LLM API traffic is routed through a raw byte TCP tunnel (vsock port 5002); the enclave performs TLS handshake directly with api.openai.com / api.anthropic.com; parent sees only encrypted ciphertext. Whitelist enforced: only `api.openai.com:443` and `api.anthropic.com:443`
 - **Enclave-per-negotiation**: Strong isolation, memory wiped on termination
+
+### Security Vectors Closed
+
+| Vector | Before (Phase 5) | After (Phase 6) |
+|--------|-------------------|------------------|
+| Parent reads LLM traffic | All plaintext via JSON proxy | TLS ciphertext only (TCP tunnel) |
+| Parent steals API key | Key in parent memory | ECIES-encrypted to enclave pubkey |
+| Forged attestation | No signature check | COSE Sign1 verified to AWS root CA |
+| Replay attestation | No freshness | Nonce + timestamp check |
+| Modified enclave code | PCR check but no crypto sig | PCRs inside cryptographically signed attestation |
 
 ## Tech Stack
 
@@ -122,18 +140,25 @@ Nitro Enclaves have no network interface. All communication between the parent E
 ```
 Parent EC2 Instance                    Nitro Enclave (CID assigned at launch)
 ┌──────────────────────┐              ┌──────────────────────────────┐
-│  EnclaveOrchestrator │              │  ndai.enclave.app            │
-│  (ndai/tee/          │   vsock      │  ├── NegotiationSession      │
-│   orchestrator.py)   │◄────────────►│  ├── SellerAgent (Claude)    │
-│                      │  port 5000   │  ├── BuyerAgent (Claude)     │
-│  LLM Proxy           │              │  └── NegotiationEngine       │
-│  (forwards Claude    │   vsock      │                              │
-│   API calls)         │◄────────────►│  VsockLLMClient              │
-│                      │  port 5001   │  (proxied API calls)         │
+│  EnclaveOrchestrator │   vsock      │  ndai.enclave.app            │
+│  (ndai/tee/          │◄────────────►│  ├── NegotiationSession      │
+│   orchestrator.py)   │  port 5000   │  ├── SellerAgent             │
+│                      │  (commands)  │  ├── BuyerAgent              │
+│  TCP Tunnel          │   vsock      │  └── NegotiationEngine       │
+│  (raw byte forwarder │◄────────────►│                              │
+│   to LLM APIs)       │  port 5002   │  TunnelLLMClient             │
+│                      │  (TLS only)  │  (TLS inside enclave)        │
+│  [LLM Proxy]         │   vsock      │  [VsockLLMClient]            │
+│  (fallback mode)     │◄────────────►│  (fallback mode)             │
+│                      │  port 5001   │                              │
 └──────────────────────┘              └──────────────────────────────┘
 ```
 
-Messages are length-prefixed (4-byte big-endian header + JSON payload). The parent proxies Claude API calls: the enclave sends serialized requests over vsock, the parent forwards them to the Anthropic API over HTTPS. Note: the parent can observe API request/response content. The API key is kept parent-side and never enters the enclave. Future work: implement TLS termination inside the enclave for full confidentiality of LLM interactions.
+**Nitro mode (secure)**: The TCP tunnel on port 5002 forwards raw bytes between the enclave and LLM APIs. The enclave performs TLS handshakes itself — the parent sees only encrypted ciphertext. The API key is delivered via ECIES encryption (P-384 ECDH + HKDF-SHA384 + AES-256-GCM) to the enclave's ephemeral public key, which is embedded in the NSM attestation document.
+
+**Simulated mode (dev)**: The LLM proxy on port 5001 forwards JSON-serialized API calls. The parent sees plaintext. No security guarantees.
+
+Messages on port 5000 use length-prefixed framing (4-byte big-endian header + JSON payload).
 
 ### PCR Values and Attestation
 

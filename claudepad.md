@@ -40,6 +40,19 @@
 - Critical test: test_changing_buyer_valuation_changes_price proves agent decisions matter
 - All 227 tests passing
 
+### 2026-03-16T16:45Z — Phase 6: Real Nitro Security (NSM + Enclave TLS + COSE)
+- Closed 3 critical security gaps: stub attestation, plaintext LLM proxy, unverified COSE signatures
+- NSM interface (`nsm.py`): real `/dev/nsm` ioctl via ctypes for attestation document requests
+- NSMStub (`nsm_stub.py`): generates self-signed COSE Sign1 for local dev (keeps tests passing)
+- Ephemeral keys (`ephemeral_keys.py`): P-384 keypair + ECIES (ECDH + HKDF-SHA384 + AES-256-GCM) for API key delivery
+- COSE verification (`attestation.py`): full cert chain validation to bundled AWS Nitro root CA, ECDSA signature check, timestamp freshness
+- TCP tunnel (`vsock_tunnel.py`): parent-side raw byte forwarder replacing JSON proxy; enclave does TLS itself
+- Tunnel LLM client (`tunnel_llm_client.py`): httpx.BaseTransport routing through vsock tunnel
+- Key delivery flow: enclave generates ephemeral keypair → public key embedded in NSM attestation → parent ECIES-encrypts API key → enclave decrypts
+- New Nitro flow: launch → tunnel → attest (COSE verify) → deliver encrypted key → negotiate → terminate
+- Backward compatible: simulated mode unchanged, all legacy JSON proxy code preserved as fallback
+- 315 tests passing (98 new: NSM, ephemeral keys, COSE verification, tunnel, key delivery integration)
+
 ## Key Findings
 
 - Paper's acceptance threshold: seller accepts if P >= alpha_0 * omega_hat (derived from P + alpha_0*(omega-omega_hat) >= alpha_0*omega)
