@@ -138,7 +138,7 @@ def run_scenario(client: httpx.Client, base_url: str, scenario: dict, idx: int) 
 
     # Register seller
     seller = client.post(f"{base_url}/api/v1/auth/register", json={
-        "email": f"seller-{ts}-{idx}@wet.test",
+        "email": f"seller-{ts}-{idx}@wettest.example.com",
         "password": "wettest123",
         "role": "seller",
     }).json()
@@ -147,7 +147,7 @@ def run_scenario(client: httpx.Client, base_url: str, scenario: dict, idx: int) 
 
     # Register buyer
     buyer = client.post(f"{base_url}/api/v1/auth/register", json={
-        "email": f"buyer-{ts}-{idx}@wet.test",
+        "email": f"buyer-{ts}-{idx}@wettest.example.com",
         "password": "wettest123",
         "role": "buyer",
     }).json()
