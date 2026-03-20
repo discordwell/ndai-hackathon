@@ -71,6 +71,28 @@
 - **Phase 12 (Wet Test)**: Created `scripts/wet_test.py` harness with 5 scenarios (quantum crypto, drug discovery, low value, high budget, adversarial injection), automated polling, reasonableness checks, audit log verification.
 - **Total: 382 tests passing** (363 → 382), frontend builds clean, Alembic migrations applied.
 
+### 2026-03-20T08:30Z — Conditional Recall + Props Features
+- Implemented two new features for Shape Rotator hackathon "Cohort that Builds Itself" bonus track
+- **Conditional Recall**: Upload credentials with usage policies; TEE executes actions without exposing the secret. 6 API endpoints (create, list mine, list available, get, use via TEE, access log), atomic use-claiming to prevent races, owner-cannot-use enforcement
+- **Props**: Submit meeting transcripts; TEE extracts summaries/action items/decisions/blockers via LLM, destroys raw text. 5 API endpoints (submit, list, get, summary, cross-team aggregation with ownership verification)
+- Both features: ORM models (Secret, SecretAccessLog, MeetingTranscript, TranscriptSummary), Pydantic schemas, async repositories, TEE sessions (SecretProxySession, TranscriptProcessingSession) with guaranteed memory wipe in finally blocks
+- Frontend: FeatureNav top bar (TRUSTKIT branding), feature-aware Sidebar, 8 new pages (4 Recall + 4 Props), 2 typed API clients
+- Code review fixes: removed credential prefix leak from LLM prompt, atomic try_claim_use replacing race-prone decrement, explicit create_summary params, aggregate ownership check
+- Alembic migration for 4 new tables, 5 new unit tests, 8 E2E tests
+- Used subagent-driven development with git worktree isolation; 9 commits, 34 files changed, ~2600 lines added
+- **Total: 370 tests passing** (365 unit + 5 new, 4 pre-existing escrow failures unrelated)
+
+### 2026-03-20T22:50Z — TrustKit TEE Upgrade: Conseca Policy Engine + Egress Logging + Verification Chain
+- Implemented three-layer verifiable security across Recall and Props features
+- **Policy Engine (Conseca pattern)**: LLM generates context-specific constraints (generator.py), deterministic engine enforces via regex/bounds (engine.py). Defaults always applied as baseline; LLM can add constraints but not weaken defaults.
+- **Egress Logging**: EgressAwareLLMClient wraps existing clients, SHA-256 hashes every request/response without retaining sensitive data. Transparent to session code.
+- **Verification Chain**: SHA-256 linked hash chain records every session event (start, policy gen, LLM call, enforcement, data clear). Produces human-readable attestation claims and tamper-evident final hash.
+- **Backend integration**: Both SecretProxySession and TranscriptProcessingSession now produce policy_report, policy_constraints, egress_log, verification fields. Stored in DB via new verification_data JSONB columns. Aggregation endpoint also gets verification.
+- **Frontend**: 3 new shared components (VerificationPanel, PolicyDisplay, EgressLogDisplay) with expand/collapse, green checkmarks, hash badges. Wired into SecretUsePage, SummaryPage, AggregationPage.
+- **30 files changed, +1754 lines**: 8 new files (3 backend modules, 3 frontend components, 3 test files), 12 modified backend files, 6 modified frontend files, 1 Alembic migration
+- **401 unit tests passing**, frontend builds clean, deployed to shape.discordwell.com
+- Browser wet test pending (Chrome extension not connected)
+
 ## Key Findings
 
 - Paper's acceptance threshold: seller accepts if P >= alpha_0 * omega_hat (derived from P + alpha_0*(omega-omega_hat) >= alpha_0*omega)
