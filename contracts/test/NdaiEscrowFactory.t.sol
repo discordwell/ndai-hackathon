@@ -37,11 +37,9 @@ contract NdaiEscrowFactoryTest is Test {
         // Balance must equal the funded amount
         assertEq(escrowAddr.balance, BUDGET, "Escrow balance incorrect");
 
-        // Verify escrow fields.
-        // Note: escrow.buyer() is the factory address because the factory
-        // contract is msg.sender in NdaiEscrow's constructor.
+        // Verify escrow fields
         NdaiEscrow escrow = NdaiEscrow(payable(escrowAddr));
-        assertEq(escrow.buyer(),        address(factory), "Wrong buyer (should be factory)");
+        assertEq(escrow.buyer(),        buyer, "Wrong buyer");
         assertEq(escrow.seller(),       seller,           "Wrong seller");
         assertEq(escrow.operator(),     operator,         "Wrong operator");
         assertEq(uint(escrow.state()),  uint(NdaiEscrow.State.Funded), "Wrong state");

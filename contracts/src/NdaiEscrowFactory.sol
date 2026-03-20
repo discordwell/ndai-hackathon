@@ -11,7 +11,7 @@ contract NdaiEscrowFactory {
     function createEscrow(
         address seller, address operator, uint256 reservePrice, uint256 deadline
     ) external payable returns (address) {
-        NdaiEscrow escrow = new NdaiEscrow{value: msg.value}(seller, operator, reservePrice, deadline);
+        NdaiEscrow escrow = new NdaiEscrow{value: msg.value}(msg.sender, seller, operator, reservePrice, deadline);
         address addr = address(escrow);
         escrows.push(addr);
         emit EscrowCreated(addr, msg.sender, seller);

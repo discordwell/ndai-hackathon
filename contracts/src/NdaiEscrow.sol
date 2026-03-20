@@ -27,19 +27,21 @@ contract NdaiEscrow is ReentrancyGuard {
     modifier inState(State s) { require(state == s, "Wrong state"); _; }
 
     constructor(
+        address _buyer,
         address _seller,
         address _operator,
         uint256 _reservePrice,
         uint256 _deadline
     ) payable {
         require(msg.value > 0, "Must fund escrow");
+        require(_buyer != address(0), "Invalid buyer");
         require(_seller != address(0), "Invalid seller");
         require(_operator != address(0), "Invalid operator");
         require(_reservePrice <= msg.value, "Reserve exceeds budget");
         require(_deadline > block.timestamp, "Deadline in past");
 
         seller = _seller;
-        buyer = msg.sender;
+        buyer = _buyer;
         operator = _operator;
         reservePrice = _reservePrice;
         budgetCap = msg.value;

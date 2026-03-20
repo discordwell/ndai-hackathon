@@ -33,12 +33,14 @@ contract ReentrancyAttackSetup {
     NdaiEscrow public escrow;
 
     function deploy(
+        address _buyer,
         address _operator,
         uint256 _reserve,
         uint256 _deadline
     ) external payable {
         attacker = new MaliciousSeller();
         escrow = new NdaiEscrow{value: msg.value}(
+            _buyer,
             address(attacker),
             _operator,
             _reserve,
@@ -63,6 +65,7 @@ contract NdaiEscrowTest is Test {
     function _deploy() internal returns (NdaiEscrow) {
         vm.prank(buyer);
         return new NdaiEscrow{value: BUDGET}(
+            buyer,
             seller,
             operator,
             RESERVE,
@@ -90,34 +93,34 @@ contract NdaiEscrowTest is Test {
         assertEq(address(escrow).balance, BUDGET);
     }
 
+    function test_Constructor_RevertZeroBuyer() public {
+        vm.expectRevert("Invalid buyer");
+        new NdaiEscrow{value: BUDGET}(address(0), seller, operator, RESERVE, block.timestamp + ONE_DAY);
+    }
+
     function test_Constructor_RevertZeroSeller() public {
-        vm.prank(buyer);
         vm.expectRevert("Invalid seller");
-        new NdaiEscrow{value: BUDGET}(address(0), operator, RESERVE, block.timestamp + ONE_DAY);
+        new NdaiEscrow{value: BUDGET}(buyer, address(0), operator, RESERVE, block.timestamp + ONE_DAY);
     }
 
     function test_Constructor_RevertZeroOperator() public {
-        vm.prank(buyer);
         vm.expectRevert("Invalid operator");
-        new NdaiEscrow{value: BUDGET}(seller, address(0), RESERVE, block.timestamp + ONE_DAY);
+        new NdaiEscrow{value: BUDGET}(buyer, seller, address(0), RESERVE, block.timestamp + ONE_DAY);
     }
 
     function test_Constructor_RevertNoFunds() public {
-        vm.prank(buyer);
         vm.expectRevert("Must fund escrow");
-        new NdaiEscrow{value: 0}(seller, operator, 0, block.timestamp + ONE_DAY);
+        new NdaiEscrow{value: 0}(buyer, seller, operator, 0, block.timestamp + ONE_DAY);
     }
 
     function test_Constructor_RevertReserveExceedsBudget() public {
-        vm.prank(buyer);
         vm.expectRevert("Reserve exceeds budget");
-        new NdaiEscrow{value: BUDGET}(seller, operator, BUDGET + 1, block.timestamp + ONE_DAY);
+        new NdaiEscrow{value: BUDGET}(buyer, seller, operator, BUDGET + 1, block.timestamp + ONE_DAY);
     }
 
     function test_Constructor_RevertDeadlineInPast() public {
-        vm.prank(buyer);
         vm.expectRevert("Deadline in past");
-        new NdaiEscrow{value: BUDGET}(seller, operator, RESERVE, block.timestamp - 1);
+        new NdaiEscrow{value: BUDGET}(buyer, seller, operator, RESERVE, block.timestamp - 1);
     }
 
     // ------------------------------------------------------------------ //
@@ -379,7 +382,7 @@ contract NdaiEscrowTest is Test {
         // Deploy attacker + escrow atomically so the escrow knows the attacker's address
         ReentrancyAttackSetup setup = new ReentrancyAttackSetup();
         vm.deal(address(setup), budget);
-        setup.deploy{value: budget}(operator, reserve, block.timestamp + ONE_DAY);
+        setup.deploy{value: budget}(buyer, operator, reserve, block.timestamp + ONE_DAY);
 
         MaliciousSeller attacker = setup.attacker();
         NdaiEscrow attackEscrow  = setup.escrow();
