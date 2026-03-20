@@ -1,7 +1,7 @@
 """Authentication endpoints."""
 
+import bcrypt as _bcrypt
 from fastapi import APIRouter, Depends, HTTPException, status
-from passlib.hash import bcrypt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ndai.api.dependencies import create_access_token
@@ -24,7 +24,7 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
     user = await create_user(
         db,
         email=request.email,
-        password_hash=bcrypt.hash(request.password),
+        password_hash=_bcrypt.hashpw(request.password.encode(), _bcrypt.gensalt()).decode(),
         role=request.role,
         display_name=request.display_name,
     )
@@ -35,7 +35,7 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
 @router.post("/login", response_model=TokenResponse)
 async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     user = await get_user_by_email(db, request.email)
-    if not user or not bcrypt.verify(request.password, user.password_hash):
+    if not user or not _bcrypt.checkpw(request.password.encode(), user.password_hash.encode()):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
