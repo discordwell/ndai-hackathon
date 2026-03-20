@@ -99,6 +99,7 @@ _AGREEMENT_UPDATABLE = frozenset({
     "status", "alpha_0", "budget_cap", "theta", "security_params",
     "seller_confirmed", "buyer_confirmed", "enclave_id", "attestation_doc",
     "negotiation_started_at", "completed_at",
+    "escrow_address", "escrow_tx_hash",
 })
 
 

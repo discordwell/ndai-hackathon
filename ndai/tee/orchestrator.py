@@ -74,6 +74,16 @@ class EnclaveNegotiationConfig:
     browser_enabled: bool = False
     browser_credentials: dict | None = None
     target_urls: list[str] | None = None
+    blockchain_enabled: bool = False
+
+
+@dataclass
+class NegotiationOutcomeWithAttestation:
+    """Negotiation result enriched with attestation data for on-chain settlement."""
+    result: NegotiationResult
+    attestation_hash: bytes  # 32-byte keccak256
+    pcr0: str
+    nonce: bytes
 
 
 class EnclaveOrchestrator:
@@ -95,7 +105,7 @@ class EnclaveOrchestrator:
 
     async def run_negotiation(
         self, config: EnclaveNegotiationConfig
-    ) -> NegotiationResult:
+    ) -> "NegotiationResult | NegotiationOutcomeWithAttestation":
         """Run a full negotiation lifecycle in an enclave.
 
         Steps:
@@ -207,7 +217,7 @@ class EnclaveOrchestrator:
                 elapsed,
             )
             # Strip sensitive fields — parent should not see internals
-            return NegotiationResult(
+            stripped = NegotiationResult(
                 outcome=result.outcome,
                 final_price=result.final_price,
                 omega_hat=0.0,
@@ -218,6 +228,21 @@ class EnclaveOrchestrator:
                 buyer_valuation=None,
                 reason=result.reason,
             )
+
+            if config.blockchain_enabled:
+                from ndai.blockchain.escrow_client import EscrowClient
+                import hashlib
+                import json as _json
+                pcr0_bytes = attestation.pcrs.get(0, "0" * 96)[:64].encode().ljust(32, b'\0')[:32]
+                outcome_bytes = hashlib.sha256(_json.dumps({"outcome": stripped.outcome.value, "price": stripped.final_price}).encode()).digest()
+                att_hash = EscrowClient.compute_attestation_hash(pcr0_bytes, nonce, outcome_bytes)
+                return NegotiationOutcomeWithAttestation(
+                    result=stripped,
+                    attestation_hash=att_hash,
+                    pcr0=pcr0_bytes.hex(),
+                    nonce=nonce,
+                )
+            return stripped
 
         except TimeoutError:
             elapsed = time.monotonic() - start_time

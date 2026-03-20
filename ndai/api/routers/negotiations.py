@@ -71,6 +71,38 @@ async def _run_negotiation_async(
         orchestrator = EnclaveOrchestrator(provider=provider, settings=settings)
         result = await orchestrator.run_negotiation(config)
 
+        # Handle blockchain-enriched result
+        from ndai.tee.orchestrator import NegotiationOutcomeWithAttestation
+        attestation_hash = None
+        if isinstance(result, NegotiationOutcomeWithAttestation):
+            attestation_hash = result.attestation_hash
+            result = result.result  # unwrap to NegotiationResult
+
+        # Submit outcome to on-chain escrow if blockchain enabled
+        if settings.blockchain_enabled and attestation_hash and result.final_price is not None:
+            try:
+                from ndai.blockchain.escrow_client import EscrowClient
+                escrow_client = EscrowClient(
+                    rpc_url=settings.base_sepolia_rpc_url,
+                    factory_address=settings.escrow_factory_address,
+                    chain_id=settings.chain_id,
+                )
+                async with async_session() as db:
+                    agreement = await get_agreement(db, uuid.UUID(agreement_id))
+                    if agreement and agreement.escrow_address:
+                        price_wei = int(result.final_price * 10**18)  # Convert to wei
+                        tx_hash = await escrow_client.submit_outcome(
+                            agreement.escrow_address,
+                            price_wei,
+                            attestation_hash,
+                            settings.escrow_operator_key,
+                        )
+                        await update_agreement(db, agreement, escrow_tx_hash=tx_hash)
+                        logger.info("Escrow outcome submitted: tx=%s", tx_hash)
+            except Exception as e:
+                logger.error("Failed to submit escrow outcome: %s", e)
+                # Don't fail the negotiation over blockchain issues
+
         # Persist outcome to DB
         async with async_session() as db:
             await create_outcome(
@@ -184,6 +216,7 @@ async def start_negotiation(
         llm_provider=settings.llm_provider,
         api_key=_api_key,
         llm_model=_llm_model,
+        blockchain_enabled=settings.blockchain_enabled,
     )
 
     _statuses[agreement_id] = {"status": "pending"}
