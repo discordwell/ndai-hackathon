@@ -45,6 +45,17 @@ class TestEscrowClientConstructor:
         assert AsyncWeb3.is_address(client._factory_address)
 
 
+class TestCreateDealSignature:
+    def test_create_deal_does_not_accept_buyer_address(self):
+        import inspect
+        from ndai.blockchain.escrow_client import EscrowClient
+        sig = inspect.signature(EscrowClient.create_deal)
+        param_names = list(sig.parameters.keys())
+        assert "buyer_address" not in param_names
+        assert "seller_address" in param_names
+        assert "operator_address" in param_names
+
+
 class TestComputeAttestationHash:
     PCR0 = b"\x00" * 48
     NONCE = b"test-nonce"

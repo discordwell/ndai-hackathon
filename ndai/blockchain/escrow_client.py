@@ -126,7 +126,6 @@ class EscrowClient:
 
     async def create_deal(
         self,
-        buyer_address: str,
         seller_address: str,
         operator_address: str,
         reserve_price_wei: int,
@@ -136,8 +135,10 @@ class EscrowClient:
     ) -> str:
         """Deploy a new NdaiEscrow via the factory.
 
+        The factory uses msg.sender as the buyer internally, so no buyer
+        address is passed here.
+
         Args:
-            buyer_address: Address of the deal buyer.
             seller_address: Address of the deal seller.
             operator_address: Address of the TEE operator.
             reserve_price_wei: Minimum acceptable price in wei.
@@ -148,12 +149,11 @@ class EscrowClient:
         Returns:
             Transaction hash hex string.
         """
-        buyer = AsyncWeb3.to_checksum_address(buyer_address)
         seller = AsyncWeb3.to_checksum_address(seller_address)
         operator = AsyncWeb3.to_checksum_address(operator_address)
 
         fn = self._factory.functions.createEscrow(
-            buyer, seller, operator, reserve_price_wei, deadline
+            seller, operator, reserve_price_wei, deadline
         )
         return await self._send_tx(fn, private_key, value_wei=budget_cap_wei)
 
