@@ -31,3 +31,19 @@ async def get_current_user(
         return user_id
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+
+
+def decode_token(token: str) -> str:
+    """Decode a JWT token string and return the user_id.
+
+    Used by SSE endpoints where the token is passed as a query param
+    (EventSource doesn't support Authorization headers).
+    """
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        user_id: str | None = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+        return user_id
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)

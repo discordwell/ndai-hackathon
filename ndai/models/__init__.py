@@ -7,6 +7,7 @@ from ndai.models.payment import Payment
 from ndai.models.audit import AuditLog
 from ndai.models.secret import Secret, SecretAccessLog
 from ndai.models.transcript import MeetingTranscript, TranscriptSummary
+from ndai.models.poker import PokerTable, PokerSeat, PokerHand, PokerHandAction
 
 __all__ = [
     "Base",
@@ -20,4 +21,8 @@ __all__ = [
     "SecretAccessLog",
     "MeetingTranscript",
     "TranscriptSummary",
+    "PokerTable",
+    "PokerSeat",
+    "PokerHand",
+    "PokerHandAction",
 ]

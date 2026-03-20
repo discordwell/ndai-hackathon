@@ -23,6 +23,11 @@ import { SubmitTranscriptPage } from "../pages/props/SubmitTranscriptPage";
 import { TranscriptListPage } from "../pages/props/TranscriptListPage";
 import { SummaryPage } from "../pages/props/SummaryPage";
 import { AggregationPage } from "../pages/props/AggregationPage";
+import { PokerLayout } from "../layouts/PokerLayout";
+import { PokerTableLayout } from "../layouts/PokerTableLayout";
+import { PokerLobbyPage } from "../pages/poker/PokerLobbyPage";
+import { PokerTablePage } from "../pages/poker/PokerTablePage";
+import { PokerHistoryPage } from "../pages/poker/PokerHistoryPage";
 
 function useHash(): string {
   const [hash, setHash] = useState(window.location.hash || "#/login");
@@ -138,6 +143,12 @@ export function Router() {
       </BuyerLayout>
     );
   }
+
+  // Poker routes
+  if (path === "/poker") return <PokerLayout><PokerLobbyPage /></PokerLayout>;
+  if (path === "/poker/history") return <PokerLayout><PokerHistoryPage /></PokerLayout>;
+  const pokerTableMatch = path.match(/^\/poker\/table\/([^/]+)$/);
+  if (pokerTableMatch) return <PokerTableLayout><PokerTablePage tableId={pokerTableMatch[1]} /></PokerTableLayout>;
 
   // Fallback — redirect to login
   if (!isAuthenticated) {

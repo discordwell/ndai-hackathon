@@ -4,6 +4,7 @@ const FEATURES = [
   { label: "NDAI Agreements", href: "#/seller", prefixes: ["#/seller", "#/buyer"] },
   { label: "Conditional Recall", href: "#/recall", prefixes: ["#/recall"] },
   { label: "Props", href: "#/props", prefixes: ["#/props"] },
+  { label: "Poker", href: "#/poker", prefixes: ["#/poker"] },
 ];
 
 export function FeatureNav() {

@@ -30,9 +30,15 @@ const PROPS_NAV: NavItem[] = [
   { label: "Cross-Team Analysis", href: "#/props/aggregate" },
 ];
 
+const POKER_NAV: NavItem[] = [
+  { label: "Lobby", href: "#/poker" },
+  { label: "Hand History", href: "#/poker/history" },
+];
+
 function getNav(hash: string, role: string | null): { nav: NavItem[]; title: string; subtitle: string } {
   if (hash.startsWith("#/recall")) return { nav: RECALL_NAV, title: "Recall", subtitle: "Credential Proxy" };
   if (hash.startsWith("#/props")) return { nav: PROPS_NAV, title: "Props", subtitle: "Transcript Intelligence" };
+  if (hash.startsWith("#/poker")) return { nav: POKER_NAV, title: "Poker", subtitle: "Texas Hold'em" };
   if (role === "buyer") return { nav: BUYER_NAV, title: "NDAI", subtitle: "Investor Portal" };
   return { nav: SELLER_NAV, title: "NDAI", subtitle: "Inventor Portal" };
 }

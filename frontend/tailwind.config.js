@@ -4,6 +4,11 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        felt: {
+          500: "#247a48",
+          600: "#1e6b3e",
+          700: "#1a5c36",
+        },
         ndai: {
           50: "#f0f4ff",
           100: "#dbe4ff",

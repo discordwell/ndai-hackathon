@@ -93,6 +93,18 @@
 - **401 unit tests passing**, frontend builds clean, deployed to shape.discordwell.com
 - Browser wet test pending (Chrome extension not connected)
 
+### 2026-03-20T23:45Z — Texas Hold'em Poker via Nitro Enclave
+- Built provably fair Texas Hold'em poker where the enclave acts as trusted dealer
+- **Enclave poker engine** (`ndai/enclave/poker/`): CSPRNG deck shuffle (Fisher-Yates with os.urandom seed), 7-card hand evaluator (all C(7,5) combos), full game state machine (blinds, betting rounds, side pots, showdown), per-player view filtering (hole cards never leak)
+- **Enclave integration**: New `poker_*` action dispatch in app.py (7 actions: create_table, join_table, leave_table, start_hand, action, timeout, get_table). Game state persists in EnclaveState.poker_tables dict.
+- **Smart contracts**: PokerTable.sol (multi-player escrow, deposit/withdraw, operator-only zero-sum settleHand, hand result hash verification) + PokerTableFactory.sol. 17 Foundry tests passing.
+- **API layer**: 9 FastAPI endpoints at /api/v1/poker, SSE streaming with per-player card filtering, PokerOrchestrator for long-lived table management, action timeout scheduling
+- **Database**: 4 new models (PokerTable, PokerSeat, PokerHand, PokerHandAction), Alembic migration
+- **Frontend**: Felt-green poker table with elliptical seat positioning, CSS card components (Unicode suits), betting controls (fold/check/call/raise slider), lobby with table creation, SSE game state updates, hero seat rotation to bottom
+- **MetaMask integration** planned: ethers.js v6, useWallet hook, WalletContext, direct deposit/withdraw to PokerTable.sol
+- 74 Python unit tests + 17 Solidity tests = 91 new tests passing. Frontend builds clean.
+- Poker is role-agnostic (any authenticated user can play)
+
 ## Key Findings
 
 - Paper's acceptance threshold: seller accepts if P >= alpha_0 * omega_hat (derived from P + alpha_0*(omega-omega_hat) >= alpha_0*omega)

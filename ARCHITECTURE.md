@@ -232,3 +232,41 @@ Hash-based SPA router, no external routing library. FastAPI serves `frontend/dis
 | Layouts | `frontend/src/layouts/` | Seller/Buyer shells with sidebar nav |
 | Pages | `frontend/src/pages/` | Dashboard, inventions, marketplace, agreements |
 | Components | `frontend/src/components/` | Shared (Card, StatusBadge), seller (InventionForm), buyer (ListingCard), negotiation (OutcomeDisplay) |
+
+## Poker (Texas Hold'em via TEE)
+
+Provably fair poker where the Nitro Enclave acts as a trusted dealer. Deck, shuffle seed, and other players' hole cards never leave the enclave.
+
+```
+Browser ↔ SSE (per-player filtered) + REST → FastAPI → Enclave (poker engine)
+                                                     → Base Sepolia (PokerTable.sol)
+```
+
+### Enclave Poker Engine (`ndai/enclave/poker/`)
+
+| Module | Purpose |
+|--------|---------|
+| `state.py` | Dataclasses: Card, PlayerSeat, HandState, TableState, Pot |
+| `deck.py` | CSPRNG shuffle (Fisher-Yates + SHA-256 PRNG from os.urandom seed) |
+| `evaluator.py` | 7-card hand evaluator (best 5 of C(7,5)=21 combos) |
+| `engine.py` | Game state machine: blinds, betting, side pots, showdown |
+| `views.py` | Per-player view filtering (strips other players' hole cards) |
+| `actions.py` | Enclave action handlers for 7 poker_* vsock actions |
+
+### On-Chain Escrow (`contracts/src/PokerTable.sol`)
+
+- Players deposit ETH directly via MetaMask
+- Operator (TEE) settles each hand (zero-sum enforced on-chain)
+- Players withdraw between hands
+- Hand result hashes stored for auditability
+
+### API (`ndai/api/routers/poker.py`)
+
+9 endpoints at `/api/v1/poker`. SSE streaming broadcasts game events with per-player card filtering (each subscriber only sees their own hole cards). PokerOrchestrator manages long-lived tables and action timeouts.
+
+### Security
+
+- **Deck/cards**: Only exist in enclave memory. Attestation proves the code.
+- **Shuffle fairness**: CSPRNG seed → deterministic shuffle. `sha256(seed)` published post-hand for verification.
+- **Settlement**: On-chain zero-sum enforcement. Sequential hand numbering prevents replay.
+- **Card filtering**: Parent receives `player_hands` dict from enclave, distributes each player's cards only to their SSE stream.

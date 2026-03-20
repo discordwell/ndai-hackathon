@@ -61,6 +61,7 @@ class EnclaveState:
     """Mutable state for the enclave application.
 
     Holds the ephemeral keypair and decrypted API key across requests.
+    Poker table state persists here so deck/cards stay sealed in the enclave.
     """
 
     def __init__(self):
@@ -68,6 +69,7 @@ class EnclaveState:
         self.api_key: str | None = None  # Decrypted API key, set via deliver_key
         self.nitro_mode: bool = False  # True when real NSM is available
         self.nsm_stub = None  # Cached NSMStub instance for dev mode
+        self.poker_tables: dict = {}  # table_id -> TableState (sealed game state)
 
     def initialize(self):
         """Generate ephemeral keypair and detect NSM availability."""
@@ -327,6 +329,9 @@ def _handle_request(request: dict[str, Any]) -> dict[str, Any]:
         return _handle_deliver_key(request)
     elif action == "ping":
         return {"status": "ok", "action": "pong"}
+    elif action and action.startswith("poker_"):
+        from ndai.enclave.poker.actions import handle_poker_action
+        return handle_poker_action(request, _state.poker_tables)
     else:
         return {"status": "error", "error": f"Unknown action: {action}"}
 

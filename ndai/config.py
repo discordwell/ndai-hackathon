@@ -50,8 +50,15 @@ class Settings(BaseSettings):
     base_sepolia_rpc_url: str = ""
     escrow_factory_address: str = ""
     escrow_operator_key: str = ""
+    escrow_operator_address: str = ""
     chain_id: int = 84532
     blockchain_enabled: bool = False
+
+    # Poker
+    poker_enabled: bool = True
+    poker_action_timeout_sec: int = 30
+    poker_table_factory_address: str = ""
+    poker_max_tables: int = 10
 
 
 settings = Settings()
