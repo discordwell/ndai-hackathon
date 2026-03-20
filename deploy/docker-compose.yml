@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ndai
+      POSTGRES_PASSWORD: ndai
+      POSTGRES_DB: ndai
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  neko:
+    build: ./neko-chrome
+    shm_size: 2gb
+    cap_add:
+      - SYS_ADMIN
+    ports:
+      - "9222:9222"
+      - "52100:8080"
+    environment:
+      NEKO_SCREEN: 1920x1080@30
+      NEKO_PASSWORD: neko
+      NEKO_PASSWORD_ADMIN: admin
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      retries: 5
+      timeout: 5s
+
+volumes:
+  pgdata:
