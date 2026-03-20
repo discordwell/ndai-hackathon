@@ -6,6 +6,7 @@ from ndai.models.agreement import Agreement, AgreementOutcome
 from ndai.models.payment import Payment
 from ndai.models.audit import AuditLog
 from ndai.models.secret import Secret, SecretAccessLog
+from ndai.models.transcript import MeetingTranscript, TranscriptSummary
 
 __all__ = [
     "Base",
@@ -17,4 +18,6 @@ __all__ = [
     "AuditLog",
     "Secret",
     "SecretAccessLog",
+    "MeetingTranscript",
+    "TranscriptSummary",
 ]
