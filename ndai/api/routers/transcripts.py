@@ -138,7 +138,10 @@ async def aggregate_transcripts(
     user_id: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    ids = [uuid.UUID(tid) for tid in req.transcript_ids]
+    try:
+        ids = [uuid.UUID(tid) for tid in req.transcript_ids]
+    except ValueError:
+        raise HTTPException(422, "Invalid UUID format in transcript_ids")
 
     # Verify ownership of all referenced transcripts
     for tid in ids:
