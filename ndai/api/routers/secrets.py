@@ -102,6 +102,27 @@ async def use_secret(
     if secret.uses_remaining <= 0:
         raise HTTPException(400, "No uses remaining")
 
+    # Validate action against policy BEFORE claiming a use
+    allowed = secret.policy.get("allowed_actions", [])
+    action_lower = req.action.lower().strip()
+    if not any(a.lower().strip() == action_lower for a in allowed):
+        # Policy violation — log but don't consume a use
+        await create_access_log(
+            db, uuid.UUID(secret_id), uuid.UUID(user_id),
+            req.action, "denied", None,
+        )
+        await log_event(
+            db, None, "secret_use_denied",
+            actor_id=uuid.UUID(user_id),
+            metadata={"secret_id": secret_id, "action": req.action},
+        )
+        return SecretUseResponse(
+            action=req.action,
+            result=f"Action denied: '{req.action}' is not allowed by policy. Allowed: {allowed}",
+            success=False,
+            secret_name=secret.name,
+        )
+
     # Atomically claim a use before running the session
     claimed = await try_claim_use(db, uuid.UUID(secret_id))
     if not claimed:
