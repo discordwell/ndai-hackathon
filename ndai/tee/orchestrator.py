@@ -71,6 +71,9 @@ class EnclaveNegotiationConfig:
     anthropic_model: str = "claude-sonnet-4-20250514"
     expected_pcrs: dict[int, str] | None = None  # For attestation verification
     enclave_config: EnclaveConfig | None = None  # Override defaults
+    browser_enabled: bool = False
+    browser_credentials: dict | None = None
+    target_urls: list[str] | None = None
 
 
 class EnclaveOrchestrator:
@@ -170,6 +173,11 @@ class EnclaveOrchestrator:
             if config.llm_model == "claude-sonnet-4-20250514" and config.anthropic_model != "claude-sonnet-4-20250514":
                 llm_model = config.anthropic_model
 
+            cdp_client = None
+            if config.browser_enabled:
+                from ndai.enclave.tunnel_cdp_client import TunnelCdpClient
+                cdp_client = TunnelCdpClient(simulated=True, chrome_url=self._settings.chrome_cdp_url)
+
             session_config = SessionConfig(
                 invention=config.invention,
                 budget_cap=config.budget_cap,
@@ -178,6 +186,7 @@ class EnclaveOrchestrator:
                 llm_provider=config.llm_provider,
                 api_key=api_key,
                 llm_model=llm_model,
+                cdp_client=cdp_client,
             )
 
             session = NegotiationSession(session_config)
@@ -269,6 +278,7 @@ class EnclaveOrchestrator:
         identity: EnclaveIdentity | None = None
         tunnel = None
         proxy = None
+        cdp_tunnel = None
         start_time = time.monotonic()
 
         try:
@@ -288,6 +298,10 @@ class EnclaveOrchestrator:
 
             # Step 2: Start TCP tunnel (replaces old LLM proxy)
             tunnel = await self._start_tunnel(identity.enclave_cid)
+
+            cdp_tunnel = None
+            if config.browser_enabled:
+                cdp_tunnel = await self._start_cdp_tunnel()
 
             # Step 3: Request attestation
             nonce = os.urandom(32)
@@ -403,6 +417,13 @@ class EnclaveOrchestrator:
                 except Exception as proxy_exc:
                     logger.warning("Failed to stop LLM proxy: %s", proxy_exc)
 
+            if cdp_tunnel is not None:
+                try:
+                    await cdp_tunnel.stop()
+                    logger.info("CDP tunnel stopped")
+                except Exception as cdp_exc:
+                    logger.warning("Failed to stop CDP tunnel: %s", cdp_exc)
+
             if tunnel is not None:
                 try:
                     await tunnel.stop()
@@ -444,6 +465,16 @@ class EnclaveOrchestrator:
         tunnel = VsockTunnel()
         await tunnel.run_background()
         logger.info("TCP tunnel started for enclave cid=%d", enclave_cid)
+        return tunnel
+
+    async def _start_cdp_tunnel(self):
+        from ndai.enclave.cdp_tunnel import CdpTunnel
+        tunnel = CdpTunnel(
+            chrome_ws_url=self._settings.chrome_cdp_url,
+            port=self._settings.cdp_vsock_port,
+        )
+        await tunnel.run_background()
+        logger.info("CDP tunnel started")
         return tunnel
 
     async def _start_llm_proxy(self, enclave_cid: int, api_key: str):

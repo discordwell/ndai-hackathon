@@ -9,6 +9,7 @@ Runs inside the TEE (or simulated TEE). Wires together:
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 from ndai.enclave.agents.base_agent import AgentMessage, InventionSubmission
 from ndai.enclave.agents.buyer_agent import BuyerAgent
@@ -45,6 +46,7 @@ class SessionConfig:
     # Legacy aliases (kept for backwards compatibility)
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
+    cdp_client: Any | None = None
 
 
 @dataclass
@@ -96,6 +98,11 @@ class NegotiationSession:
             theta=self.theta,
             llm_client=llm,
         )
+
+        self.browser_tools = None
+        if config.cdp_client:
+            from ndai.enclave.agents.browser_tools import BrowserTools
+            self.browser_tools = BrowserTools(config.cdp_client)
 
     def run(self) -> NegotiationResult:
         """Execute the full negotiation protocol.

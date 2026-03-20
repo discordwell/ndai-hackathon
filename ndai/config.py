@@ -41,5 +41,17 @@ class Settings(BaseSettings):
     max_negotiation_rounds: int = 5
     negotiation_timeout_sec: int = 300
 
+    # CDP / Browser
+    browser_enabled: bool = False
+    chrome_cdp_url: str = "ws://localhost:9222"
+    cdp_vsock_port: int = 5003
+
+    # Blockchain
+    base_sepolia_rpc_url: str = ""
+    escrow_factory_address: str = ""
+    escrow_operator_key: str = ""
+    chain_id: int = 84532
+    blockchain_enabled: bool = False
+
 
 settings = Settings()
