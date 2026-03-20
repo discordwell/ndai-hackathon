@@ -52,13 +52,22 @@ async def list_available_secrets(db: AsyncSession) -> list[Secret]:
     return list(result.scalars().all())
 
 
-async def decrement_uses(db: AsyncSession, secret: Secret) -> Secret:
-    secret.uses_remaining -= 1
-    if secret.uses_remaining <= 0:
-        secret.status = "depleted"
-    await db.commit()
-    await db.refresh(secret)
-    return secret
+async def try_claim_use(db: AsyncSession, secret_id: uuid.UUID) -> bool:
+    """Atomically decrement uses_remaining. Returns True if a use was claimed."""
+    result = await db.execute(
+        update(Secret)
+        .where(Secret.id == secret_id, Secret.uses_remaining > 0, Secret.status == "active")
+        .values(uses_remaining=Secret.uses_remaining - 1)
+    )
+    if result.rowcount == 1:
+        # Check if now depleted
+        secret = await get_secret(db, secret_id)
+        if secret and secret.uses_remaining <= 0:
+            secret.status = "depleted"
+        await db.commit()
+        return True
+    await db.rollback()
+    return False
 
 
 async def create_access_log(

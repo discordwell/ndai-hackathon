@@ -75,7 +75,7 @@ class SecretProxySession:
             "Be concise but realistic."
         )
         user_prompt = (
-            f"Credential (type/prefix): {self.config.secret_value[:8]}...\n"
+            f"A credential is available inside the TEE (not shown for security).\n"
             f"Action to execute: {self.config.action}\n\n"
             "Simulate executing this action and return the result."
         )

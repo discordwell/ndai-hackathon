@@ -28,6 +28,8 @@ from ndai.db.repositories_transcripts import (
     update_transcript_status,
 )
 from ndai.db.session import get_db
+from ndai.enclave.agents.llm_client import LLMClient
+from ndai.enclave.agents.openai_llm_client import OpenAILLMClient
 from ndai.enclave.sessions.transcript_processor import TranscriptConfig, TranscriptProcessingSession
 from ndai.services.audit import log_event
 
@@ -137,6 +139,15 @@ async def aggregate_transcripts(
     db: AsyncSession = Depends(get_db),
 ):
     ids = [uuid.UUID(tid) for tid in req.transcript_ids]
+
+    # Verify ownership of all referenced transcripts
+    for tid in ids:
+        transcript = await get_transcript(db, tid)
+        if not transcript:
+            raise HTTPException(404, f"Transcript {tid} not found")
+        if str(transcript.submitter_id) != user_id:
+            raise HTTPException(403, f"Not authorized to aggregate transcript {tid}")
+
     summaries = await list_summaries_by_ids(db, ids)
     if len(summaries) < 2:
         raise HTTPException(400, "Need at least 2 completed transcripts to aggregate")
@@ -152,8 +163,6 @@ async def aggregate_transcripts(
 
     combined = "\n---\n".join(summary_texts)
 
-    from ndai.enclave.agents.llm_client import LLMClient
-    from ndai.enclave.agents.openai_llm_client import OpenAILLMClient
     if settings.llm_provider == "openai":
         client = OpenAILLMClient(api_key=settings.openai_api_key, model=settings.openai_model)
     else:

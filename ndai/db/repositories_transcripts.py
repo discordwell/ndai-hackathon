@@ -49,8 +49,26 @@ async def update_transcript_status(db: AsyncSession, transcript: MeetingTranscri
     return transcript
 
 
-async def create_summary(db: AsyncSession, transcript_id: uuid.UUID, **kwargs) -> TranscriptSummary:
-    summary = TranscriptSummary(id=uuid.uuid4(), transcript_id=transcript_id, **kwargs)
+async def create_summary(
+    db: AsyncSession,
+    transcript_id: uuid.UUID,
+    executive_summary: str,
+    action_items: list | None = None,
+    key_decisions: list | None = None,
+    dependencies: list | None = None,
+    blockers: list | None = None,
+    sentiment: str | None = None,
+) -> TranscriptSummary:
+    summary = TranscriptSummary(
+        id=uuid.uuid4(),
+        transcript_id=transcript_id,
+        executive_summary=executive_summary,
+        action_items=action_items or [],
+        key_decisions=key_decisions or [],
+        dependencies=dependencies or [],
+        blockers=blockers or [],
+        sentiment=sentiment,
+    )
     db.add(summary)
     await db.commit()
     await db.refresh(summary)

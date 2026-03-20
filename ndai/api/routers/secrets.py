@@ -20,11 +20,11 @@ from ndai.config import settings
 from ndai.db.repositories_secrets import (
     create_access_log,
     create_secret,
-    decrement_uses,
     get_secret,
     list_access_logs,
     list_available_secrets,
     list_secrets_by_owner,
+    try_claim_use,
 )
 from ndai.db.session import get_db
 from ndai.enclave.sessions.secret_proxy import SecretProxyConfig, SecretProxySession
@@ -95,10 +95,17 @@ async def use_secret(
     secret = await get_secret(db, uuid.UUID(secret_id))
     if not secret:
         raise HTTPException(404, "Secret not found")
+    if secret.owner_id == uuid.UUID(user_id):
+        raise HTTPException(403, "Owner cannot use their own secret")
     if secret.status != "active":
         raise HTTPException(400, f"Secret is {secret.status}")
     if secret.uses_remaining <= 0:
         raise HTTPException(400, "No uses remaining")
+
+    # Atomically claim a use before running the session
+    claimed = await try_claim_use(db, uuid.UUID(secret_id))
+    if not claimed:
+        raise HTTPException(409, "Secret use could not be claimed (concurrent request or depleted)")
 
     secret_value = base64.b64decode(secret.encrypted_value).decode()
 
@@ -118,9 +125,6 @@ async def use_secret(
         db, uuid.UUID(secret_id), uuid.UUID(user_id),
         req.action, log_status, result.result_text[:500] if result.success else None,
     )
-
-    if result.success:
-        await decrement_uses(db, secret)
 
     await log_event(
         db, None, f"secret_use_{log_status}",
