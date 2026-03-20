@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from ndai.api.routers import agreements, auth, inventions, negotiations
+from ndai.api.routers import agreements, auth, inventions, negotiations, secrets
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
@@ -48,6 +48,7 @@ def create_app() -> FastAPI:
     app.include_router(inventions.router, prefix="/api/v1/inventions", tags=["inventions"])
     app.include_router(agreements.router, prefix="/api/v1/agreements", tags=["agreements"])
     app.include_router(negotiations.router, prefix="/api/v1/negotiations", tags=["negotiations"])
+    app.include_router(secrets.router, prefix="/api/v1/secrets", tags=["secrets"])
 
     @app.get("/health")
     async def health():
