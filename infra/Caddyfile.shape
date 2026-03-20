@@ -1,0 +1,24 @@
+# TrustKit (NDAI) — shape.discordwell.com
+# Append this block to /etc/caddy/Caddyfile on ovh2
+
+shape.discordwell.com {
+	# Frontend: static files from esbuild output
+	root * /opt/trustkit/frontend/dist
+	encode gzip
+
+	# API requests proxy to uvicorn
+	handle /api/* {
+		reverse_proxy localhost:8100
+	}
+
+	# Health check proxy
+	handle /health {
+		reverse_proxy localhost:8100
+	}
+
+	# SPA catch-all: serve index.html for all other routes
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}
