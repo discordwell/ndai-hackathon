@@ -1,7 +1,7 @@
 """Tests for TranscriptProcessingSession."""
 
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from ndai.enclave.sessions.transcript_processor import (
     TranscriptConfig,
@@ -17,6 +17,14 @@ Alice: Great. Also, we decided to use PostgreSQL instead of MongoDB for the even
 Bob: One blocker — we don't have staging environment access yet. DevOps ticket is open.
 Alice: I'll follow up with the DevOps team today. Let's sync again Thursday.
 """
+
+
+def _make_mock_client(return_text="mock result"):
+    mock = MagicMock()
+    mock.model = "gpt-4o"
+    mock.create_message.return_value = "resp"
+    mock.extract_text.return_value = return_text
+    return mock
 
 
 def test_transcript_processing_returns_structured_result():
@@ -38,8 +46,9 @@ def test_transcript_processing_returns_structured_result():
         "blockers": ["No staging environment access"],
         "sentiment": "neutral",
     })
+    mock_client = _make_mock_client(mock_response)
 
-    with patch.object(session, "_call_llm", return_value=mock_response):
+    with patch.object(session, "_build_client", return_value=mock_client):
         result = session.run()
 
     assert isinstance(result, TranscriptResult)
@@ -47,6 +56,9 @@ def test_transcript_processing_returns_structured_result():
     assert "roadmap" in result.executive_summary.lower() or len(result.executive_summary) > 0
     assert len(result.action_items) >= 1
     assert result.transcript_deleted is True
+    assert result.policy_report is not None
+    assert result.verification is not None
+    assert result.egress_log is not None
 
 
 def test_transcript_is_cleared_after_processing():
@@ -67,8 +79,9 @@ def test_transcript_is_cleared_after_processing():
         "blockers": [],
         "sentiment": "neutral",
     })
+    mock_client = _make_mock_client(mock_response)
 
-    with patch.object(session, "_call_llm", return_value=mock_response):
+    with patch.object(session, "_build_client", return_value=mock_client):
         session.run()
 
     assert session.config.transcript_text is None

@@ -62,6 +62,12 @@ async def submit_transcript(
     result = await asyncio.to_thread(session.run)
 
     if result.success:
+        verification_store = {
+            "policy_report": result.policy_report,
+            "policy_constraints": result.policy_constraints,
+            "egress_log": result.egress_log,
+            "verification": result.verification,
+        } if result.verification else None
         await create_summary(
             db, transcript_id=transcript.id,
             executive_summary=result.executive_summary,
@@ -70,6 +76,7 @@ async def submit_transcript(
             dependencies=result.dependencies,
             blockers=result.blockers,
             sentiment=result.sentiment,
+            verification_data=verification_store,
         )
         await update_transcript_status(db, transcript, "completed")
     else:
@@ -123,12 +130,17 @@ async def get_summary(
     if not summary:
         raise HTTPException(404, "Summary not yet available")
 
+    vd = summary.verification_data or {}
     return TranscriptSummaryResponse(
         id=str(summary.id), transcript_id=str(summary.transcript_id),
         executive_summary=summary.executive_summary,
         action_items=summary.action_items, key_decisions=summary.key_decisions,
         dependencies=summary.dependencies, blockers=summary.blockers,
         sentiment=summary.sentiment, created_at=summary.created_at,
+        policy_report=vd.get("policy_report"),
+        policy_constraints=vd.get("policy_constraints"),
+        egress_log=vd.get("egress_log"),
+        verification=vd.get("verification"),
     )
 
 
@@ -166,10 +178,22 @@ async def aggregate_transcripts(
 
     combined = "\n---\n".join(summary_texts)
 
+    from ndai.enclave.egress import EgressAwareLLMClient, EgressLog
+    from ndai.enclave.verification import SessionVerificationChain
+
+    chain = SessionVerificationChain()
+    egress_log = EgressLog()
+
+    chain.record("session_start", {
+        "transcript_count": len(summaries),
+    }, "Aggregation session initialized")
+
     if settings.llm_provider == "openai":
-        client = OpenAILLMClient(api_key=settings.openai_api_key, model=settings.openai_model)
+        raw_client = OpenAILLMClient(api_key=settings.openai_api_key, model=settings.openai_model)
     else:
-        client = LLMClient(api_key=settings.anthropic_api_key, model=settings.anthropic_model)
+        raw_client = LLMClient(api_key=settings.anthropic_api_key, model=settings.anthropic_model)
+
+    client = EgressAwareLLMClient(raw_client, egress_log)
 
     system_prompt = (
         "You are analyzing summaries from multiple team meetings inside a TEE. "
@@ -189,6 +213,7 @@ async def aggregate_transcripts(
         )
         return client.extract_text(response)
 
+    chain.record("llm_call", {"model": client.model}, "LLM called for cross-team aggregation")
     raw = await asyncio.to_thread(_do_llm)
     cleaned = raw.strip().strip("`").strip()
     if cleaned.startswith("json"):
@@ -199,6 +224,9 @@ async def aggregate_transcripts(
     except json.JSONDecodeError:
         data = {"cross_team_summary": raw[:500], "shared_dependencies": [], "shared_blockers": [], "recommendations": []}
 
+    chain.record("result_produced", {"success": True}, "Aggregation result produced")
+    report = chain.finalize()
+
     await log_event(db, None, "aggregation_completed", actor_id=uuid.UUID(user_id),
                     metadata={"transcript_count": len(summaries)})
 
@@ -208,6 +236,13 @@ async def aggregate_transcripts(
         shared_blockers=data.get("shared_blockers", []),
         recommendations=data.get("recommendations", []),
         transcript_count=len(summaries),
+        verification={
+            "session_id": report.session_id,
+            "events": report.events,
+            "chain_hashes": report.chain_hashes,
+            "final_hash": report.final_hash,
+            "attestation_claims": report.attestation_claims,
+        },
     )
 
 

@@ -38,6 +38,10 @@ class SecretUseResponse(BaseModel):
     success: bool
     secret_name: str
     attestation_available: bool = True
+    policy_report: dict | None = None
+    policy_constraints: list[dict] | None = None
+    egress_log: list[dict] | None = None
+    verification: dict | None = None
 
 
 class SecretAccessLogResponse(BaseModel):

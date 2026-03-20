@@ -29,6 +29,10 @@ export interface SecretUseResponse {
   success: boolean;
   secret_name: string;
   attestation_available: boolean;
+  policy_report: any | null;
+  policy_constraints: any[] | null;
+  egress_log: any[] | null;
+  verification: any | null;
 }
 
 export interface AccessLogEntry {

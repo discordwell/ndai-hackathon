@@ -31,6 +31,10 @@ class TranscriptSummaryResponse(BaseModel):
     sentiment: str | None
     attestation_available: bool = True
     created_at: datetime
+    policy_report: dict | None = None
+    policy_constraints: list[dict] | None = None
+    egress_log: list[dict] | None = None
+    verification: dict | None = None
 
 
 class AggregationRequest(BaseModel):
@@ -44,3 +48,4 @@ class AggregationResponse(BaseModel):
     recommendations: list[str]
     transcript_count: int
     attestation_available: bool = True
+    verification: dict | None = None

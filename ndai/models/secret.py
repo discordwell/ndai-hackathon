@@ -35,4 +35,5 @@ class SecretAccessLog(Base):
     action_requested: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)  # approved, denied, error
     result_summary: Mapped[str | None] = mapped_column(Text)
+    verification_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

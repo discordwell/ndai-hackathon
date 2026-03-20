@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { getSecret, useSecret, SecretResponse, SecretUseResponse } from "../../api/secrets";
 import { LoadingSpinner } from "../../components/shared/LoadingSpinner";
+import { VerificationPanel } from "../../components/shared/VerificationPanel";
+import { PolicyDisplay } from "../../components/shared/PolicyDisplay";
+import { EgressLogDisplay } from "../../components/shared/EgressLogDisplay";
 
 interface Props {
   id: string;
@@ -80,30 +83,37 @@ export function SecretUsePage({ id }: Props) {
       </div>
 
       {result ? (
-        <div className="bg-white rounded-xl border border-gray-100 p-5">
-          <h2 className="font-semibold text-gray-900 mb-3">Result</h2>
-          <div
-            className={`p-3 rounded-lg text-sm mb-3 ${
-              result.success ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"
-            }`}
-          >
-            {result.success ? "Success" : "Failed"}
+        <>
+          <div className="bg-white rounded-xl border border-gray-100 p-5">
+            <h2 className="font-semibold text-gray-900 mb-3">Result</h2>
+            <div
+              className={`p-3 rounded-lg text-sm mb-3 ${
+                result.success ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"
+              }`}
+            >
+              {result.success ? "Success" : "Failed"}
+            </div>
+            <div className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3">
+              {result.result}
+            </div>
+            {result.attestation_available && (
+              <p className="mt-3 text-xs text-gray-500">
+                Attestation available — this result was produced inside a TEE.
+              </p>
+            )}
+            <button
+              onClick={() => { setResult(null); setAction(""); }}
+              className="mt-4 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"
+            >
+              Use Again
+            </button>
           </div>
-          <div className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3">
-            {result.result}
+          <div className="mt-6 space-y-4">
+            <PolicyDisplay report={result.policy_report} constraints={result.policy_constraints} />
+            <VerificationPanel verification={result.verification} />
+            <EgressLogDisplay entries={result.egress_log} />
           </div>
-          {result.attestation_available && (
-            <p className="mt-3 text-xs text-gray-500">
-              Attestation available — this result was produced inside a TEE.
-            </p>
-          )}
-          <button
-            onClick={() => { setResult(null); setAction(""); }}
-            className="mt-4 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"
-          >
-            Use Again
-          </button>
-        </div>
+        </>
       ) : (
         <div className="bg-white rounded-xl border border-gray-100 p-5">
           <h2 className="font-semibold text-gray-900 mb-3">Request Access</h2>

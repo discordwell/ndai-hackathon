@@ -26,6 +26,10 @@ export interface TranscriptSummaryResponse {
   sentiment: string | null;
   attestation_available: boolean;
   created_at: string;
+  policy_report: any | null;
+  policy_constraints: any[] | null;
+  egress_log: any[] | null;
+  verification: any | null;
 }
 
 export interface AggregationResponse {
@@ -35,6 +39,7 @@ export interface AggregationResponse {
   recommendations: string[];
   transcript_count: number;
   attestation_available: boolean;
+  verification: any | null;
 }
 
 export const submitTranscript = (data: TranscriptSubmitRequest) => post<TranscriptResponse>("/transcripts/", data);

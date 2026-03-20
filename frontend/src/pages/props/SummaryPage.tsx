@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { getSummary, TranscriptSummaryResponse } from "../../api/transcripts";
 import { LoadingSpinner } from "../../components/shared/LoadingSpinner";
+import { VerificationPanel } from "../../components/shared/VerificationPanel";
+import { PolicyDisplay } from "../../components/shared/PolicyDisplay";
+import { EgressLogDisplay } from "../../components/shared/EgressLogDisplay";
 
 interface Props {
   id: string;
@@ -99,6 +102,10 @@ export function SummaryPage({ id }: Props) {
             <BulletList items={summary.blockers} emptyText="No blockers identified" />
           </div>
         </div>
+
+        <PolicyDisplay report={summary.policy_report} constraints={summary.policy_constraints} />
+        <VerificationPanel verification={summary.verification} />
+        <EgressLogDisplay entries={summary.egress_log} />
       </div>
     </div>
   );

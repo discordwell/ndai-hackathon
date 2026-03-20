@@ -142,9 +142,16 @@ async def use_secret(
     result = await asyncio.to_thread(session.run)
 
     log_status = "approved" if result.success else "denied"
+    verification_store = {
+        "policy_report": result.policy_report,
+        "policy_constraints": result.policy_constraints,
+        "egress_log": result.egress_log,
+        "verification": result.verification,
+    } if result.verification else None
     await create_access_log(
         db, uuid.UUID(secret_id), uuid.UUID(user_id),
         req.action, log_status, result.result_text[:500] if result.success else None,
+        verification_data=verification_store,
     )
 
     await log_event(
@@ -158,6 +165,10 @@ async def use_secret(
         result=result.result_text,
         success=result.success,
         secret_name=secret.name,
+        policy_report=result.policy_report,
+        policy_constraints=result.policy_constraints,
+        egress_log=result.egress_log,
+        verification=result.verification,
     )
 
 

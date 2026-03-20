@@ -58,6 +58,7 @@ async def create_summary(
     dependencies: list | None = None,
     blockers: list | None = None,
     sentiment: str | None = None,
+    verification_data: dict | None = None,
 ) -> TranscriptSummary:
     summary = TranscriptSummary(
         id=uuid.uuid4(),
@@ -68,6 +69,7 @@ async def create_summary(
         dependencies=dependencies or [],
         blockers=blockers or [],
         sentiment=sentiment,
+        verification_data=verification_data,
     )
     db.add(summary)
     await db.commit()

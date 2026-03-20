@@ -35,4 +35,5 @@ class TranscriptSummary(Base):
     dependencies: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     blockers: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     sentiment: Mapped[str | None] = mapped_column(String(30))
+    verification_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

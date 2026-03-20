@@ -77,6 +77,7 @@ async def create_access_log(
     action_requested: str,
     status: str,
     result_summary: str | None = None,
+    verification_data: dict | None = None,
 ) -> SecretAccessLog:
     log = SecretAccessLog(
         secret_id=secret_id,
@@ -84,6 +85,7 @@ async def create_access_log(
         action_requested=action_requested,
         status=status,
         result_summary=result_summary,
+        verification_data=verification_data,
     )
     db.add(log)
     await db.commit()

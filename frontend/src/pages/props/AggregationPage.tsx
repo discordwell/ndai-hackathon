@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { listTranscripts, aggregate, TranscriptResponse, AggregationResponse } from "../../api/transcripts";
 import { LoadingSpinner } from "../../components/shared/LoadingSpinner";
 import { EmptyState } from "../../components/shared/EmptyState";
+import { VerificationPanel } from "../../components/shared/VerificationPanel";
 
 function BulletList({ items }: { items: string[] }) {
   if (items.length === 0) {
@@ -172,6 +173,8 @@ export function AggregationPage() {
               <BulletList items={result.recommendations} />
             </div>
           </div>
+
+          <VerificationPanel verification={result.verification} />
         </div>
       )}
     </div>

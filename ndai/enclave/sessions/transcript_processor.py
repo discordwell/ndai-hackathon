@@ -3,6 +3,7 @@
 import json
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,10 @@ class TranscriptResult:
     sentiment: str = "neutral"
     transcript_deleted: bool = False
     error: str | None = None
+    policy_report: dict | None = None
+    policy_constraints: list[dict] | None = None
+    egress_log: list[dict] | None = None
+    verification: dict | None = None
 
 
 class TranscriptProcessingSession:
@@ -35,26 +40,109 @@ class TranscriptProcessingSession:
         self.config = config
 
     def run(self) -> TranscriptResult:
+        from ndai.enclave.egress import EgressAwareLLMClient, EgressLog
+        from ndai.enclave.policy.engine import enforce_all, hash_policy
+        from ndai.enclave.policy.generator import generate_policy
+        from ndai.enclave.verification import SessionVerificationChain
+
+        chain = SessionVerificationChain()
+        egress_log = EgressLog()
+
         try:
-            raw = self._call_llm()
+            chain.record("session_start", {
+                "title": self.config.title,
+                "team_name": self.config.team_name,
+            }, "Transcript processing session initialized")
+
+            # Build LLM client with egress logging
+            client = self._build_client(egress_log)
+
+            # Generate policy
+            context = f"Meeting transcript: {self.config.title}"
+            if self.config.team_name:
+                context += f" (Team: {self.config.team_name})"
+            policy = generate_policy("props", context, client)
+            chain.record("policy_generated", {
+                "task_type": "props",
+                "constraint_count": len(policy.constraints),
+                "policy_hash": hash_policy(policy),
+            }, "Policy generated for transcript processing")
+
+            # Call LLM
+            raw = self._call_llm_with_client(client)
+            chain.record("llm_call", {"model": client.model}, "LLM called for transcript analysis")
+
+            # Parse response
             parsed = self._parse_response(raw)
+
+            # Enforce policy on parsed fields
+            fields_to_check = {
+                "executive_summary": parsed.executive_summary,
+                "sentiment": parsed.sentiment,
+            }
+            policy_report = enforce_all(policy, fields_to_check)
+            chain.record("policy_enforced", {
+                "all_passed": policy_report.all_passed,
+                "policy_hash": policy_report.policy_hash,
+            }, "Policy enforced deterministically on LLM output")
+
+            chain.record("result_produced", {
+                "success": True,
+                "policy_passed": policy_report.all_passed,
+            }, "Result produced and validated")
+
+            report = chain.finalize()
+
+            parsed.policy_report = {
+                "all_passed": policy_report.all_passed,
+                "results": [
+                    {"field": r.field, "passed": r.passed, "violations": r.violations}
+                    for r in policy_report.results
+                ],
+                "policy_hash": policy_report.policy_hash,
+            }
+            parsed.policy_constraints = [
+                {
+                    "field": c.field,
+                    "pattern": c.pattern,
+                    "deny_patterns": c.deny_patterns,
+                    "max_length": c.max_length,
+                    "rationale": c.rationale,
+                }
+                for c in policy.constraints
+            ]
+            parsed.egress_log = egress_log.to_dict_list()
+            parsed.verification = _report_to_dict(report)
+
             return parsed
         except Exception as e:
             logger.error("Transcript processing failed: %s", e)
-            return TranscriptResult(success=False, error=str(e), transcript_deleted=True)
+            chain.record("result_produced", {"error": str(e)}, "Processing failed")
+            report = chain.finalize()
+            return TranscriptResult(
+                success=False,
+                error=str(e),
+                transcript_deleted=True,
+                verification=_report_to_dict(report),
+            )
         finally:
             self.config.transcript_text = None
+            chain.record("sensitive_data_cleared", {}, "Raw transcript deleted from session memory")
             logger.info("Raw transcript deleted from session memory")
 
-    def _call_llm(self) -> str:
+    def _build_client(self, egress_log: Any) -> Any:
         from ndai.enclave.agents.llm_client import LLMClient
         from ndai.enclave.agents.openai_llm_client import OpenAILLMClient
+        from ndai.enclave.egress import EgressAwareLLMClient
 
         if self.config.llm_provider == "openai":
-            client = OpenAILLMClient(api_key=self.config.api_key, model=self.config.llm_model)
+            raw_client = OpenAILLMClient(api_key=self.config.api_key, model=self.config.llm_model)
         else:
-            client = LLMClient(api_key=self.config.api_key, model=self.config.llm_model)
+            raw_client = LLMClient(api_key=self.config.api_key, model=self.config.llm_model)
 
+        return EgressAwareLLMClient(raw_client, egress_log)
+
+    def _call_llm_with_client(self, client: Any) -> str:
         system_prompt = (
             "You are analyzing a meeting transcript inside a Trusted Execution Environment. "
             "The raw transcript will be destroyed after processing. "
@@ -104,3 +192,13 @@ class TranscriptProcessingSession:
             sentiment=data.get("sentiment", "neutral"),
             transcript_deleted=True,
         )
+
+
+def _report_to_dict(report: Any) -> dict:
+    return {
+        "session_id": report.session_id,
+        "events": report.events,
+        "chain_hashes": report.chain_hashes,
+        "final_hash": report.final_hash,
+        "attestation_claims": report.attestation_claims,
+    }
