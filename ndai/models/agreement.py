@@ -27,6 +27,8 @@ class Agreement(Base):
     buyer_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     enclave_id: Mapped[str | None] = mapped_column(String(255))
     attestation_doc: Mapped[bytes | None] = mapped_column(LargeBinary)
+    escrow_address: Mapped[str | None] = mapped_column(String(42))
+    escrow_tx_hash: Mapped[str | None] = mapped_column(String(66))
     negotiation_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

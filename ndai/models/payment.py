@@ -20,6 +20,6 @@ class Payment(Base):
     payee_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, escrowed, released, refunded
-    mock_transaction_id: Mapped[str | None] = mapped_column(String(255))
+    transaction_hash: Mapped[str | None] = mapped_column(String(66))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
