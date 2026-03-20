@@ -10,10 +10,13 @@ Arrow's disclosure paradox: inventors must reveal innovations to secure funding,
 
 ```
 Frontend (React) → FastAPI Backend → Parent EC2 Instance → Nitro Enclave
-                                                            ├── Seller Agent (Claude)
-                                                            ├── Buyer Agent (Claude)
-                                                            ├── Nash Bargaining Engine
-                                                            └── Crypto (Shamir SSS)
+                                     ├── Base Sepolia (NdaiEscrow)
+                                     ├── neko-chrome (CDP)
+                                     └── Nitro Enclave
+                                         ├── Seller Agent (Claude)
+                                         ├── Buyer Agent (Claude)
+                                         ├── Nash Bargaining Engine
+                                         └── Crypto (Shamir SSS)
 ```
 
 ### Trust Boundary
@@ -68,6 +71,12 @@ Both agents' decisions affect the final price. The seller controls `ω̂` (discl
 | Transparency API | `ndai/api/schemas/transparency.py` | Verifiable transparency report schema |
 | Deploy Scripts | `deploy/` | Systemd, nginx, Docker Compose, smoke test |
 | Wet Test Harness | `scripts/wet_test.py` | Automated real-LLM negotiation testing |
+| Escrow Contract | `contracts/src/NdaiEscrow.sol` | On-chain escrow with price constraints, attestation verification, expiry |
+| Escrow Factory | `contracts/src/NdaiEscrowFactory.sol` | Deploys per-deal escrow contracts, maintains registry |
+| Escrow Client | `ndai/blockchain/escrow_client.py` | Python web3.py wrapper for escrow contract interaction |
+| CDP Tunnel | `ndai/enclave/cdp_tunnel.py` | Parent-side vsock↔WebSocket bridge to Chrome |
+| CDP Client | `ndai/enclave/tunnel_cdp_client.py` | Enclave-side lightweight CDP client over websockets |
+| Browser Tools | `ndai/enclave/agents/browser_tools.py` | Agent tool definitions for browser automation |
 
 ## Data Flow
 
@@ -83,6 +92,7 @@ Seller submits invention (encrypted client-side)
         → Buyer agent evaluates v_b via Claude (1 API call)
         → Bilateral Nash resolution: P* = (v_b + α₀·ω̂) / 2
     → Agreement: invention key + payment released
+        → Orchestrator submits outcome on-chain via Base Sepolia (NdaiEscrow)
     → No deal: all data destroyed, enclave terminated
 ```
 
@@ -93,6 +103,8 @@ Seller submits invention (encrypted client-side)
 - **Encrypted API Key Delivery**: Enclave generates ephemeral P-384 keypair on startup; public key embedded in attestation document; parent encrypts API key via ECIES (ECDH + HKDF-SHA384 + AES-256-GCM) to enclave's public key; enclave decrypts with private key — parent never has the key in enclave-readable form
 - **Enclave TLS (TCP Tunnel)**: In Nitro mode, LLM API traffic is routed through a raw byte TCP tunnel (vsock port 5002); the enclave performs TLS handshake directly with api.openai.com / api.anthropic.com; parent sees only encrypted ciphertext. Whitelist enforced: only `api.openai.com:443` and `api.anthropic.com:443`
 - **Enclave-per-negotiation**: Strong isolation, memory wiped on termination
+
+> **Browser-evaluated artifacts:** When browser tools are used, Chrome runs on the parent EC2 instance (outside the TEE). The parent could serve fake pages or intercept CDP traffic. Browser evaluation provides convenience for interactive artifact inspection but has weaker trust guarantees than directly-uploaded artifacts encrypted to the enclave's ephemeral key. Mitigations include TLS certificate verification via CDP's Security.enable domain and content hashing into the transcript chain.
 
 ### Security Vectors Closed
 
@@ -162,6 +174,9 @@ Parent EC2 Instance                    Nitro Enclave (CID assigned at launch)
 │  [LLM Proxy]         │   vsock      │  [VsockLLMClient]            │
 │  (fallback mode)     │◄────────────►│  (fallback mode)             │
 │                      │  port 5001   │                              │
+│  CDP Tunnel          │   vsock      │  TunnelCDPClient             │
+│  (vsock↔WebSocket    │◄────────────►│  (browser automation         │
+│   bridge to Chrome)  │  port 5003   │   inside enclave)            │
 └──────────────────────┘              └──────────────────────────────┘
 ```
 
