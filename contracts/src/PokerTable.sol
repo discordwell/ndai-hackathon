@@ -21,6 +21,7 @@ contract PokerTable {
     mapping(uint256 => bytes32) public handResultHashes;
 
     bool public isOpen;
+    bool public handInProgress;
     bool private _locked;
 
     event PlayerDeposited(address indexed player, uint256 amount);
@@ -83,8 +84,9 @@ contract PokerTable {
         emit PlayerDeposited(msg.sender, msg.value);
     }
 
-    /// @notice Withdraw all remaining balance
+    /// @notice Withdraw all remaining balance (only between hands)
     function withdraw() external nonReentrant {
+        require(!handInProgress, "Hand in progress");
         uint256 bal = balances[msg.sender];
         require(bal > 0, "No balance");
 
@@ -95,6 +97,11 @@ contract PokerTable {
         emit PlayerWithdrew(msg.sender, bal);
         (bool ok,) = msg.sender.call{value: bal}("");
         require(ok, "Transfer failed");
+    }
+
+    /// @notice Signal that a hand has started (prevents withdrawals)
+    function setHandInProgress(bool _inProgress) external onlyOperator {
+        handInProgress = _inProgress;
     }
 
     /// @notice Settle a hand: transfer chips between players (operator only)
@@ -128,6 +135,7 @@ contract PokerTable {
 
         handResultHashes[handNumber] = resultHash;
         lastSettledHand = handNumber;
+        handInProgress = false;
         emit HandSettled(handNumber, resultHash);
     }
 
@@ -143,6 +151,8 @@ contract PokerTable {
         uint256 bal = balances[msg.sender];
         require(bal > 0, "No balance");
         balances[msg.sender] = 0;
+        isSeated[msg.sender] = false;
+        _removePlayer(msg.sender);
         (bool ok,) = msg.sender.call{value: bal}("");
         require(ok, "Transfer failed");
     }

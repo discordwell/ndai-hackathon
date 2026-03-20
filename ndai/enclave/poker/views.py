@@ -29,6 +29,7 @@ def make_table_view(table: TableState, player_id: str | None = None) -> dict[str
         seat_view: dict[str, Any] = {
             "seat_index": seat.seat_index,
             "player_id": seat.player_id,
+            "wallet_address": seat.wallet_address,
             "stack": seat.stack,
             "is_active": seat.is_active,
             "is_sitting_out": seat.is_sitting_out,

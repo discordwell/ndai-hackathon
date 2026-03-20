@@ -458,13 +458,12 @@ def _advance_phase(table: TableState) -> list[dict]:
         return events
 
     # Set action: first active player after dealer
-    if len(table.seated_players()) == 2:
-        # Heads-up post-flop: big blind acts first (non-dealer)
-        hand.action_on = table.next_occupied_seat(hand.dealer_seat)
-        if hand.action_on == hand.dealer_seat:
-            hand.action_on = table.next_active_seat(hand.dealer_seat)
+    active_count = len(hand.active_players(table.seats))
+    if active_count == 2 and len(table.seated_players()) == 2:
+        # Heads-up post-flop: non-dealer acts first
+        hand.action_on = table.next_active_seat(hand.dealer_seat)
     else:
-        hand.action_on = table.next_occupied_seat(hand.dealer_seat)
+        hand.action_on = table.next_active_seat(hand.dealer_seat)
 
     _skip_all_in_players(table)
 
@@ -536,22 +535,25 @@ def _collect_bets_into_pots(table: TableState) -> None:
         )]
         return
 
-    # Build side pots for each all-in level
+    # Build side pots for each all-in level.
+    # Include all players who bet (even folded ones contribute money to the pot),
+    # but only active players are eligible to win.
     pots: list[Pot] = []
     prev_level = 0
-    remaining_players = [s for s in table.seats if s is not None and s.total_bet_this_hand > 0]
+    all_bettors = [s for s in table.seats if s is not None and s.total_bet_this_hand > 0]
 
     # Build levels: each all-in amount plus the max bet (which covers non-all-in players)
-    max_bet = max(s.total_bet_this_hand for s in remaining_players)
+    max_bet = max(s.total_bet_this_hand for s in all_bettors)
     all_levels = sorted(set(all_in_amounts + [max_bet]))
 
     for level in all_levels:
         pot_amount = 0
         eligible = []
-        for s in remaining_players:
+        for s in all_bettors:
             contribution = min(s.total_bet_this_hand, level) - prev_level
             if contribution > 0:
                 pot_amount += contribution
+            # Only active (non-folded) players who bet at least this level are eligible
             if s.is_active and s.total_bet_this_hand >= level:
                 eligible.append(s.player_id)
 

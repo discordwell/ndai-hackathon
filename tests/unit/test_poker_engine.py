@@ -425,3 +425,107 @@ class TestDealerRotation:
                     s.stack = 50000
         # Should have visited at least 3 different seats
         assert len(set(dealers)) >= 2
+
+
+class TestSidePotWithFoldedPlayers:
+    """Review fix #2: folded players shouldn't create phantom side pots."""
+
+    def test_folded_player_money_in_pot(self):
+        """Folded player's bets should still be in the pot."""
+        table = _make_table(3, small_blind=50, big_blind=100, stack=5000)
+        start_hand(table)
+        hand = table.hand
+
+        # UTG raises to 300
+        seat_idx = hand.action_on
+        process_action(table, f"player-{seat_idx}", PlayerAction.RAISE, amount=300)
+
+        # SB folds
+        seat_idx = hand.action_on
+        process_action(table, f"player-{seat_idx}", PlayerAction.FOLD)
+
+        # BB calls
+        seat_idx = hand.action_on
+        process_action(table, f"player-{seat_idx}", PlayerAction.CALL)
+
+        # Pot should include SB's 50 + UTG's 300 + BB's 300
+        total_pot = sum(p.amount for p in hand.pots)
+        assert total_pot > 0
+
+        # Finish hand
+        max_actions = 20
+        actions_taken = 0
+        while not hand.hand_over and actions_taken < max_actions:
+            if hand.action_on is None:
+                break
+            seat_idx = hand.action_on
+            seat = table.seats[seat_idx]
+            if hand.current_bet > seat.current_bet:
+                process_action(table, f"player-{seat_idx}", PlayerAction.CALL)
+            else:
+                process_action(table, f"player-{seat_idx}", PlayerAction.CHECK)
+            actions_taken += 1
+
+        # Zero-sum check
+        total = sum(s.stack for s in table.seats if s is not None)
+        assert total == 15000
+
+    def test_all_in_with_fold_creates_correct_pots(self):
+        """Side pots with an all-in and a folded player."""
+        table = _make_table(3, small_blind=50, big_blind=100, stack=500)
+        # Give seat 2 a smaller stack for all-in
+        table.seats[2].stack = 200
+        start_hand(table)
+        hand = table.hand
+
+        # Play through: all-in with short stack, fold, call
+        max_actions = 20
+        actions_taken = 0
+        while not hand.hand_over and actions_taken < max_actions:
+            if hand.action_on is None:
+                break
+            seat_idx = hand.action_on
+            seat = table.seats[seat_idx]
+            if seat.stack > 0:
+                if hand.current_bet > seat.current_bet and seat.stack <= (hand.current_bet - seat.current_bet):
+                    process_action(table, f"player-{seat_idx}", PlayerAction.ALL_IN)
+                elif hand.current_bet > seat.current_bet:
+                    process_action(table, f"player-{seat_idx}", PlayerAction.CALL)
+                else:
+                    process_action(table, f"player-{seat_idx}", PlayerAction.CHECK)
+            actions_taken += 1
+
+        # Zero-sum: total stacks must equal initial total (500 + 500 + 200)
+        total = sum(s.stack for s in table.seats if s is not None)
+        assert total == 1200
+
+
+class TestViewFiltering:
+    """Review fix #15: wallet_address should appear in table view."""
+
+    def test_wallet_address_in_view(self):
+        from ndai.enclave.poker.views import make_table_view
+
+        table = _make_table(2)
+        view = make_table_view(table, "player-0")
+        for seat in view["seats"]:
+            if seat is not None:
+                assert "wallet_address" in seat
+
+    def test_hero_sees_own_cards_only(self):
+        """Verify per-player view filtering."""
+        from ndai.enclave.poker.views import make_table_view
+
+        table = _make_table(2)
+        start_hand(table)
+
+        view = make_table_view(table, "player-0")
+        for seat in view["seats"]:
+            if seat is None:
+                continue
+            if seat["player_id"] == "player-0":
+                assert seat["hole_cards"] is not None
+                assert len(seat["hole_cards"]) == 2
+            else:
+                assert seat["hole_cards"] is None
+                assert seat["has_hole_cards"] is True

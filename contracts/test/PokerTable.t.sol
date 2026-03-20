@@ -180,6 +180,63 @@ contract PokerTableTest is Test {
         assertEq(table.getBalance(player2), 0.9 ether);
     }
 
+    // --- Hand in progress guard ---
+
+    function test_withdraw_during_hand_reverts() public {
+        vm.prank(player1);
+        table.deposit{value: 1 ether}();
+
+        // Operator signals hand in progress
+        vm.prank(operator);
+        table.setHandInProgress(true);
+
+        vm.prank(player1);
+        vm.expectRevert("Hand in progress");
+        table.withdraw();
+    }
+
+    function test_settle_clears_hand_in_progress() public {
+        vm.prank(player1);
+        table.deposit{value: 1 ether}();
+        vm.prank(player2);
+        table.deposit{value: 1 ether}();
+
+        vm.prank(operator);
+        table.setHandInProgress(true);
+        assertTrue(table.handInProgress());
+
+        // Settle hand should clear the flag
+        address[] memory winners = new address[](1);
+        winners[0] = player1;
+        uint256[] memory winAmounts = new uint256[](1);
+        winAmounts[0] = 0.1 ether;
+        address[] memory losers = new address[](1);
+        losers[0] = player2;
+        uint256[] memory lossAmounts = new uint256[](1);
+        lossAmounts[0] = 0.1 ether;
+
+        vm.prank(operator);
+        table.settleHand(1, keccak256("h1"), winners, winAmounts, losers, lossAmounts);
+
+        assertFalse(table.handInProgress());
+        // Now withdrawal should work
+        vm.prank(player1);
+        table.withdraw();
+        assertEq(table.getBalance(player1), 0);
+    }
+
+    function test_emergency_withdraw_cleans_up() public {
+        vm.prank(player1);
+        table.deposit{value: 1 ether}();
+        vm.prank(operator);
+        table.closeTable();
+
+        vm.prank(player1);
+        table.emergencyWithdraw();
+        assertFalse(table.isSeated(player1));
+        assertEq(table.getPlayerCount(), 0);
+    }
+
     // --- Close table ---
 
     function test_close_table() public {

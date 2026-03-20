@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 _table_queues: dict[str, dict[str, asyncio.Queue]] = {}
 # Background tasks (prevent GC)
 _tasks: set[asyncio.Task] = set()
+# Per-table locks to prevent double hand starts
+_table_locks: dict[str, asyncio.Lock] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -56,17 +58,95 @@ async def _emit_poker_event(
 
 
 async def _broadcast_events(table_id: str, events: list[dict], player_hands: dict | None = None) -> None:
-    """Broadcast a list of enclave events to SSE subscribers."""
+    """Broadcast a list of enclave events to SSE subscribers.
+
+    Showdown events are public (cards are revealed at showdown in standard poker).
+    deal/cards_dealt events are filtered per-player.
+    """
     for event in events:
         event_type = event.get("type", "game_event")
-        await _emit_poker_event(table_id, event_type, event, player_hands if event_type == "cards_dealt" else None)
+        # Per-player filtering only for card dealing
+        hands = player_hands if event_type == "cards_dealt" else None
+        await _emit_poker_event(table_id, event_type, event, hands)
 
 
 async def _handle_timeout_callback(table_id: str, result: dict) -> None:
     """Called when a player times out. Broadcasts the resulting events."""
     if result.get("events"):
         await _broadcast_events(table_id, result["events"])
+    # Check if timeout caused hand to end
+    if any(e.get("type") == "hand_end" for e in result.get("events", [])):
+        await _settle_and_continue(table_id, result["events"])
+    else:
+        await _maybe_start_next_hand(table_id)
+
+
+async def _settle_and_continue(table_id: str, events: list[dict]) -> None:
+    """Settle the completed hand on-chain, then start the next hand."""
+    orchestrator = get_poker_orchestrator()
+
+    # Extract settlement data from hand_end event
+    hand_end = next((e for e in events if e.get("type") == "hand_end"), None)
+    if hand_end:
+        stack_updates = hand_end.get("stack_updates", {})
+        hand_number = hand_end.get("hand_number", 0)
+
+        # Get table info for escrow contract and wallet addresses
+        table_result = await orchestrator.send_action({
+            "action": "poker_get_table",
+            "table_id": table_id,
+        })
+        if table_result.get("status") == "ok":
+            view = table_result.get("table_view", {})
+            escrow = view.get("escrow_contract", "")
+            # Build wallet map from seats
+            wallet_map = {}
+            previous_stacks = {}
+            for seat in view.get("seats", []):
+                if seat:
+                    wallet_map[seat["player_id"]] = seat.get("wallet_address", "")
+                    previous_stacks[seat["player_id"]] = seat.get("stack", 0)
+
+            # Settle on-chain (non-blocking — failures are logged but don't block game)
+            tx_hash = await orchestrator.settle_hand(
+                table_id=table_id,
+                escrow_contract=escrow,
+                hand_number=hand_number,
+                stack_updates=stack_updates,
+                previous_stacks=previous_stacks,
+                wallet_map=wallet_map,
+            )
+
+            if tx_hash:
+                await _emit_poker_event(table_id, "settlement", {
+                    "hand_number": hand_number,
+                    "tx_hash": tx_hash,
+                })
+
+                # Update DB hand record
+                try:
+                    async with async_session() as db:
+                        result = await db.execute(
+                            select(PokerHand).where(
+                                PokerHand.table_id == uuid.UUID(table_id),
+                                PokerHand.hand_number == hand_number,
+                            )
+                        )
+                        hand = result.scalar_one_or_none()
+                        if hand:
+                            hand.settlement_tx_hash = tx_hash
+                            hand.ended_at = datetime.now(timezone.utc)
+                            await db.commit()
+                except Exception:
+                    logger.warning("Failed to persist settlement tx hash")
+
     await _maybe_start_next_hand(table_id)
+
+
+def _get_table_lock(table_id: str) -> asyncio.Lock:
+    if table_id not in _table_locks:
+        _table_locks[table_id] = asyncio.Lock()
+    return _table_locks[table_id]
 
 
 async def _maybe_start_next_hand(table_id: str) -> None:
@@ -91,7 +171,12 @@ async def _maybe_start_next_hand(table_id: str) -> None:
 
     if phase in ("waiting", "showdown", "settling") or (view.get("hand_number") is not None and phase == "waiting"):
         await asyncio.sleep(3)  # Brief pause between hands
-        await _do_start_hand(table_id)
+        # Use lock to prevent double hand starts
+        lock = _get_table_lock(table_id)
+        if lock.locked():
+            return
+        async with lock:
+            await _do_start_hand(table_id)
 
 
 async def _do_start_hand(table_id: str) -> None:
@@ -287,7 +372,17 @@ async def join_table(
     """Join a poker table."""
     orchestrator = get_poker_orchestrator()
 
-    # TODO: verify on-chain deposit via body.deposit_tx_hash
+    # Verify on-chain deposit before seating
+    # Look up escrow contract from DB
+    table_row = await db.execute(
+        select(PokerTable).where(PokerTable.id == uuid.UUID(table_id))
+    )
+    poker_table = table_row.scalar_one_or_none()
+    escrow_addr = poker_table.escrow_contract if poker_table else None
+    if escrow_addr:
+        verified = await orchestrator.verify_deposit(escrow_addr, body.wallet_address, body.buy_in)
+        if not verified:
+            raise HTTPException(status_code=402, detail="On-chain deposit not verified")
 
     result = await orchestrator.send_action({
         "action": "poker_join_table",
@@ -396,9 +491,9 @@ async def submit_action(
     # Broadcast events
     await _broadcast_events(table_id, events)
 
-    # If hand is over, auto-start next hand
+    # If hand is over, settle on-chain and auto-start next hand
     if result.get("hand_over"):
-        task = asyncio.create_task(_maybe_start_next_hand(table_id))
+        task = asyncio.create_task(_settle_and_continue(table_id, events))
         _tasks.add(task)
         task.add_done_callback(_tasks.discard)
 
@@ -411,6 +506,18 @@ async def start_hand_endpoint(
     user_id: str = Depends(get_current_user),
 ):
     """Manually start a new hand (if auto-start hasn't triggered)."""
+    # Verify the requesting user is seated at this table
+    orchestrator = get_poker_orchestrator()
+    result = await orchestrator.send_action({
+        "action": "poker_get_table",
+        "table_id": table_id,
+        "player_id": user_id,
+    })
+    if result.get("status") != "ok":
+        raise HTTPException(status_code=404, detail="Table not found")
+    view = result.get("table_view", {})
+    if not any(s and s.get("player_id") == user_id for s in view.get("seats", [])):
+        raise HTTPException(status_code=403, detail="Must be seated to start a hand")
     await _do_start_hand(table_id)
     return {"status": "ok"}
 
