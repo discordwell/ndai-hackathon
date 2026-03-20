@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 
 interface NavItem {
@@ -39,7 +39,12 @@ function getNav(hash: string, role: string | null): { nav: NavItem[]; title: str
 
 export function Sidebar() {
   const { role, logout } = useAuth();
-  const hash = window.location.hash;
+  const [hash, setHash] = useState(window.location.hash);
+  useEffect(() => {
+    const handler = () => setHash(window.location.hash);
+    window.addEventListener("hashchange", handler);
+    return () => window.removeEventListener("hashchange", handler);
+  }, []);
   const { nav, title, subtitle } = getNav(hash, role);
 
   return (

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 
 const FEATURES = [
   { label: "NDAI Agreements", href: "#/seller", prefixes: ["#/seller", "#/buyer"] },
@@ -7,7 +7,12 @@ const FEATURES = [
 ];
 
 export function FeatureNav() {
-  const hash = window.location.hash;
+  const [hash, setHash] = useState(window.location.hash);
+  useEffect(() => {
+    const handler = () => setHash(window.location.hash);
+    window.addEventListener("hashchange", handler);
+    return () => window.removeEventListener("hashchange", handler);
+  }, []);
 
   return (
     <div className="bg-ndai-700 text-white px-4 py-2 flex items-center gap-6">
