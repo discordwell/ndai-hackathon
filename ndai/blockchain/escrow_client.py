@@ -114,7 +114,7 @@ class EscrowClient:
         gas_estimate = await fn.estimate_gas(tx_params)
         tx_params["gas"] = int(gas_estimate * 1.2)  # 20% buffer
 
-        raw_tx = fn.build_transaction(tx_params)
+        raw_tx = await fn.build_transaction(tx_params)
         signed = account.sign_transaction(raw_tx)
         tx_hash = await self._w3.eth.send_raw_transaction(signed.raw_transaction)
         logger.info("Sent tx %s", tx_hash.hex())
