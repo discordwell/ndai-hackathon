@@ -5,6 +5,7 @@ from ndai.models.invention import Invention
 from ndai.models.agreement import Agreement, AgreementOutcome
 from ndai.models.payment import Payment
 from ndai.models.audit import AuditLog
+from ndai.models.secret import Secret, SecretAccessLog
 
 __all__ = [
     "Base",
@@ -14,4 +15,6 @@ __all__ = [
     "AgreementOutcome",
     "Payment",
     "AuditLog",
+    "Secret",
+    "SecretAccessLog",
 ]
