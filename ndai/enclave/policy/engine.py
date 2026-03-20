@@ -104,8 +104,8 @@ def enforce(constraint: PolicyConstraint, value: str) -> FieldResult:
 def enforce_all(policy: Policy, fields: dict[str, str]) -> PolicyReport:
     """Enforce all constraints in a policy against the given field values.
 
-    Fields not present in the dict are skipped (not enforced).
-    Constraints for fields not in the dict produce a violation.
+    Each constraint is checked against the corresponding field value.
+    Constraints for fields not present in the dict produce a 'missing field' violation.
     """
     p_hash = hash_policy(policy)
     results: list[FieldResult] = []

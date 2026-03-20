@@ -213,8 +213,8 @@ async def aggregate_transcripts(
         )
         return client.extract_text(response)
 
-    chain.record("llm_call", {"model": client.model}, "LLM called for cross-team aggregation")
     raw = await asyncio.to_thread(_do_llm)
+    chain.record("llm_call", {"model": client.model}, "LLM called for cross-team aggregation")
     cleaned = raw.strip().strip("`").strip()
     if cleaned.startswith("json"):
         cleaned = cleaned[4:].strip()
@@ -236,13 +236,7 @@ async def aggregate_transcripts(
         shared_blockers=data.get("shared_blockers", []),
         recommendations=data.get("recommendations", []),
         transcript_count=len(summaries),
-        verification={
-            "session_id": report.session_id,
-            "events": report.events,
-            "chain_hashes": report.chain_hashes,
-            "final_hash": report.final_hash,
-            "attestation_claims": report.attestation_claims,
-        },
+        verification=report.to_dict(),
     )
 
 

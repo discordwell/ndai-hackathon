@@ -30,6 +30,15 @@ class VerificationReport:
     final_hash: str
     attestation_claims: list[str]
 
+    def to_dict(self) -> dict:
+        return {
+            "session_id": self.session_id,
+            "events": self.events,
+            "chain_hashes": self.chain_hashes,
+            "final_hash": self.final_hash,
+            "attestation_claims": self.attestation_claims,
+        }
+
 
 def _sha256(data: str) -> str:
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
