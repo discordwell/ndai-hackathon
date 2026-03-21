@@ -102,8 +102,11 @@
 - **Database**: 4 new models (PokerTable, PokerSeat, PokerHand, PokerHandAction), Alembic migration
 - **Frontend**: Felt-green poker table with elliptical seat positioning, CSS card components (Unicode suits), betting controls (fold/check/call/raise slider), lobby with table creation, SSE game state updates, hero seat rotation to bottom
 - **MetaMask integration** planned: ethers.js v6, useWallet hook, WalletContext, direct deposit/withdraw to PokerTable.sol
-- 74 Python unit tests + 17 Solidity tests = 91 new tests passing. Frontend builds clean.
+- 78 Python unit tests + 20 Solidity tests = 98 new tests passing. Frontend builds clean.
 - Poker is role-agnostic (any authenticated user can play)
+- **Code review fixes applied**: side pot double-counting, folded-player phantom pots, raise amount ambiguity, deposit verification, settleHand integration, withdraw-during-hand guard, emergencyWithdraw cleanup, start-hand auth check, per-table lock for race condition, wallet_address in views
+- **Deployed and wet tested**: Full hand played via API (preflop→flop→turn→river→showdown with Full House winner), card filtering verified (each player sees only own hole cards), UI renders table/cards/seats/pot/blinds correctly
+- **Note**: uvicorn must run with `--workers 1` because poker enclave state is in-process (multi-worker loses state)
 
 ## Key Findings
 
