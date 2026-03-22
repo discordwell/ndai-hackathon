@@ -2,6 +2,19 @@
 
 ## Session Summaries
 
+### 2026-03-23T14:00Z — ZK-Authenticated 0day Marketplace: Password-Derived Identity
+- Built zero-knowledge auth system for the vuln marketplace — separate from existing email/password auth
+- **Crypto auth**: Password → argon2id (256MB, 3 iterations, 4 parallelism) → Ed25519 keypair. Server stores ONLY public keys. Challenge-response login (nonce in Redis, 60s TTL, one-time use). JWT issued with `auth_type: "zk"` claim, rejected by regular `get_current_user`.
+- **Identity separation**: Ed25519 identity keypair is NOT the Ethereum key. Users connect MetaMask per-deal only. Platform never persistently links identity pubkey to ETH address.
+- **Buyer bounty requests**: New feature — buyers post requests for 0days (target software, desired impact, budget in ETH). Sellers browse and respond, creating a ZKVulnAgreement.
+- **Database**: 5 new tables (vuln_identities, zk_vulnerabilities, zk_vuln_agreements, zk_vuln_outcomes, bounties) — completely separate from existing invention marketplace tables.
+- **Backend**: 3 new routers (zk_auth at /api/v1/zk-auth, zk_vulns at /api/v1/zk-vulns, bounties at /api/v1/bounties), all using `get_zk_identity` dependency.
+- **Privacy/Tor**: PrivacyMiddleware (zeroes client IP, strips proxy headers) + CSPMiddleware (blocks all external resources). Activated via `privacy_mode=True`. Deploy configs: torrc + nginx-onion.conf.
+- **JS integrity verification**: esbuild post-build generates `integrity.json` with SHA-256 hashes. BundleRegistry.sol publishes hash on-chain. ZKIdentityPage can verify bundle hash.
+- **Frontend**: Dark void-950 themed marketplace with argon2id key derivation, sessionStorage (clears on tab close), two-tab marketplace (Listings + Bounties), wallet connect per-deal, deal lifecycle page.
+- **44 new tests passing**: 30 Python unit (ZK auth, bounties, privacy middleware) + 9 Python integration (full auth flow with mocked Redis) + 5 Solidity (BundleRegistry). Frontend builds clean.
+- **Key design decisions**: sessionStorage not localStorage (private key never persisted), separate ZK models (FBI sees pubkeys in one table, emails in another — no link), self-dealing blocked in both listings and bounties.
+
 ### 2026-03-23T07:00Z — zdayzk.com: Standalone Zero-Day Marketplace Frontend
 - Built complete standalone frontend for zdayzk.com at `zdayzk-frontend/` — React 19 + TypeScript + Tailwind CSS, esbuild-bundled
 - **Design**: Dark premium theme (surface-950 dark bg, gold accent-400, glass-morphism cards, system fonts for CSP/privacy safety)

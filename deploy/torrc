@@ -1,0 +1,5 @@
+# NDAI Zero-Day Marketplace Tor Hidden Service
+# Place this file at /etc/tor/torrc.d/ndai.conf
+
+HiddenServiceDir /var/lib/tor/ndai/
+HiddenServicePort 80 127.0.0.1:8000
