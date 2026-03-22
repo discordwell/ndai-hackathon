@@ -12,9 +12,11 @@ contract VulnEscrow is ReentrancyGuard {
     address public immutable seller;
     address public immutable buyer;
     address public immutable operator;
+    address public immutable platform;   // Platform operator — receives fee
     uint256 public immutable reservePrice;
     uint256 public immutable budgetCap;
     uint256 public immutable deadline;
+    uint256 public constant PLATFORM_FEE_BPS = 1000; // 10% in basis points
 
     // Vuln-specific immutables
     uint256 public immutable discoveryTimestamp;
@@ -34,7 +36,7 @@ contract VulnEscrow is ReentrancyGuard {
     bytes32 public keyCommitment;    // SHA-256(encrypted_delivery_key) — accountability proof
 
     event OutcomeSubmitted(uint256 finalPrice, uint256 decayAdjustedPrice, bytes32 attestationHash);
-    event DealAccepted(uint256 sellerPayout, uint256 buyerRefund);
+    event DealAccepted(uint256 sellerPayout, uint256 platformFee, uint256 buyerRefund);
     event DealRejected(uint256 buyerRefund);
     event DealExpired(uint256 buyerRefund);
     event PatchDetected(uint256 buyerRefund);
@@ -47,6 +49,7 @@ contract VulnEscrow is ReentrancyGuard {
         address _buyer,
         address _seller,
         address _operator,
+        address _platform,
         uint256 _reservePrice,
         uint256 _deadline,
         uint256 _discoveryTimestamp,
@@ -57,12 +60,14 @@ contract VulnEscrow is ReentrancyGuard {
         require(_buyer    != address(0), "Invalid buyer");
         require(_seller   != address(0), "Invalid seller");
         require(_operator != address(0), "Invalid operator");
+        require(_platform != address(0), "Invalid platform");
         require(_reservePrice <= msg.value, "Reserve exceeds budget");
         require(_deadline > block.timestamp, "Deadline in past");
 
         seller   = _seller;
         buyer    = _buyer;
         operator = _operator;
+        platform = _platform;
         reservePrice = _reservePrice;
         budgetCap    = msg.value;
         deadline     = _deadline;
@@ -122,17 +127,20 @@ contract VulnEscrow is ReentrancyGuard {
         require(ok, "Refund failed");
     }
 
-    /// @notice Seller accepts the deal. Pays decayAdjustedPrice to seller, refunds rest.
+    /// @notice Seller accepts the deal. Splits payment: 90% seller, 10% platform, rest refunded to buyer.
     function acceptDeal() external onlySeller inState(State.Evaluated) nonReentrant {
         state = State.Accepted;
-        uint256 sellerPayout = decayAdjustedPrice;
-        uint256 buyerRefund  = address(this).balance - sellerPayout;
-        emit DealAccepted(sellerPayout, buyerRefund);
+        uint256 fee = (decayAdjustedPrice * PLATFORM_FEE_BPS) / 10000;
+        uint256 sellerPayout = decayAdjustedPrice - fee;
+        uint256 buyerRefund  = address(this).balance - decayAdjustedPrice;
+        emit DealAccepted(sellerPayout, fee, buyerRefund);
         (bool s1,) = seller.call{value: sellerPayout}("");
         require(s1, "Seller transfer failed");
+        (bool s2,) = platform.call{value: fee}("");
+        require(s2, "Platform fee transfer failed");
         if (buyerRefund > 0) {
-            (bool s2,) = buyer.call{value: buyerRefund}("");
-            require(s2, "Buyer refund failed");
+            (bool s3,) = buyer.call{value: buyerRefund}("");
+            require(s3, "Buyer refund failed");
         }
     }
 

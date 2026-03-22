@@ -10,6 +10,7 @@ contract VulnEscrowTest is Test {
     address buyer    = address(0xBEEF);
     address seller   = address(0xCAFE);
     address operator = address(0xDEAD);
+    address platform = address(0xFEE);
     address stranger = address(0xBAD);
 
     uint256 constant BUDGET  = 1 ether;
@@ -27,6 +28,7 @@ contract VulnEscrowTest is Test {
             buyer,
             seller,
             operator,
+            platform,
             RESERVE,
             block.timestamp + ONE_DAY,
             block.timestamp - 30 days, // discovered 30 days ago
@@ -49,20 +51,22 @@ contract VulnEscrowTest is Test {
         assertEq(escrow.seller(), seller);
         assertEq(escrow.buyer(), buyer);
         assertEq(escrow.operator(), operator);
+        assertEq(escrow.platform(), platform);
         assertEq(escrow.budgetCap(), BUDGET);
         assertEq(escrow.reservePrice(), RESERVE);
+        assertEq(escrow.PLATFORM_FEE_BPS(), 1000); // 10%
         assertTrue(escrow.isExclusive());
         assertTrue(escrow.isEmbargoActive());
     }
 
     function test_constructor_reverts_zero_value() public {
         vm.expectRevert("Must fund escrow");
-        new VulnEscrow(buyer, seller, operator, 0, block.timestamp + 1, 0, 90, true);
+        new VulnEscrow(buyer, seller, operator, platform, 0, block.timestamp + 1, 0, 90, true);
     }
 
     function test_constructor_reverts_reserve_exceeds() public {
         vm.expectRevert("Reserve exceeds budget");
-        new VulnEscrow{value: 0.1 ether}(buyer, seller, operator, 1 ether, block.timestamp + 1, 0, 90, true);
+        new VulnEscrow{value: 0.1 ether}(buyer, seller, operator, platform, 1 ether, block.timestamp + 1, 0, 90, true);
     }
 
     // ── submitOutcome ──
@@ -136,21 +140,27 @@ contract VulnEscrowTest is Test {
 
     // ── acceptDeal ──
 
-    function test_accept_pays_decay_adjusted() public {
+    function test_accept_splits_payment_three_ways() public {
         uint256 rawPrice = 0.5 ether;
         vm.prank(operator);
         escrow.submitOutcome(rawPrice, keccak256("x"), DECAY_85, bytes32(0), bytes32(0));
 
         uint256 adjusted = (rawPrice * DECAY_85) / 1e18; // 0.425 ether
+        uint256 fee = (adjusted * 1000) / 10000;          // 10% = 0.0425 ether
+        uint256 sellerPayout = adjusted - fee;             // 90% = 0.3825 ether
+        uint256 buyerRefund = BUDGET - adjusted;
+
         uint256 sellerBefore = seller.balance;
+        uint256 platformBefore = platform.balance;
         uint256 buyerBefore = buyer.balance;
 
         vm.prank(seller);
         escrow.acceptDeal();
 
         assertEq(uint(escrow.state()), uint(VulnEscrow.State.Accepted));
-        assertEq(seller.balance, sellerBefore + adjusted);
-        assertEq(buyer.balance, buyerBefore + (BUDGET - adjusted));
+        assertEq(seller.balance, sellerBefore + sellerPayout);
+        assertEq(platform.balance, platformBefore + fee);
+        assertEq(buyer.balance, buyerBefore + buyerRefund);
     }
 
     function test_accept_reverts_not_seller() public {

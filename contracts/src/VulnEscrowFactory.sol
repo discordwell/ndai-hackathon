@@ -4,8 +4,10 @@ pragma solidity ^0.8.24;
 import "./VulnEscrow.sol";
 
 /// @title VulnEscrowFactory — Deploys VulnEscrow contracts for zero-day deals
+/// @notice The factory owner is the platform operator who receives the 10% fee.
 contract VulnEscrowFactory {
     address[] public escrows;
+    address public immutable platformAddress; // Platform operator — receives 10% fee
 
     event EscrowCreated(
         address indexed escrow,
@@ -14,14 +16,13 @@ contract VulnEscrowFactory {
         bool isExclusive
     );
 
+    constructor(address _platformAddress) {
+        require(_platformAddress != address(0), "Invalid platform address");
+        platformAddress = _platformAddress;
+    }
+
     /// @notice Deploy a new VulnEscrow for a vulnerability deal.
-    /// @param seller             Vulnerability researcher address
-    /// @param operator           TEE operator address
-    /// @param reservePrice       Minimum acceptable price in wei
-    /// @param deadline           Unix timestamp for deal expiry
-    /// @param discoveryTimestamp  Unix timestamp when vulnerability was discovered
-    /// @param embargoDays        Number of days for exclusivity embargo
-    /// @param isExclusive        Whether this is an exclusive deal
+    ///         The platform fee address is automatically set from the factory.
     function createEscrow(
         address seller,
         address operator,
@@ -35,6 +36,7 @@ contract VulnEscrowFactory {
             msg.sender,
             seller,
             operator,
+            platformAddress,
             reservePrice,
             deadline,
             discoveryTimestamp,
