@@ -23,7 +23,7 @@ source .venv/bin/activate
 pip install -e ".[dev]" -q 2>/dev/null
 
 # Frontend build
-cd zdayzk-frontend && npm install --silent && npm run build 2>&1 | tail -1 && cd ..
+cd frontend-zk && npm install --silent && npm run build 2>&1 | tail -1 && cd ..
 
 # Database migrations (shared DB with TrustKit — safe to run from either)
 if [ -f alembic.ini ]; then

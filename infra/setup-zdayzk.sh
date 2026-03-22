@@ -33,7 +33,7 @@ REMOTE
 echo "Building frontend..."
 ssh "$HOST" << REMOTE
 set -euo pipefail
-cd "$APP_DIR/zdayzk-frontend"
+cd "$APP_DIR/frontend-zk"
 npm install --silent
 npm run build 2>&1 | tail -1
 echo "Frontend built"
@@ -58,7 +58,7 @@ LLM_PROVIDER=openai
 OPENAI_API_KEY=$OPENAI_KEY
 OPENAI_MODEL=gpt-4o
 TEE_MODE=simulated
-FRONTEND_DIR=$APP_DIR/zdayzk-frontend/dist
+FRONTEND_DIR=$APP_DIR/frontend-zk/dist
 ENVEOF"
 echo ".env created (SECRET_KEY shared with TrustKit for SSO)"
 

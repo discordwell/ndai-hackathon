@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ndai.models.agreement import Agreement, AgreementOutcome
 from ndai.models.invention import Invention
 from ndai.models.user import User
+from ndai.models.rfp import BuyerRFP, RFPProposal
 from ndai.models.vulnerability import Vulnerability, VulnAgreement, VulnAgreementOutcome
 
 
@@ -220,3 +221,73 @@ async def get_vuln_outcome_by_agreement(
         select(VulnAgreementOutcome).where(VulnAgreementOutcome.agreement_id == agreement_id)
     )
     return result.scalar_one_or_none()
+
+
+# ── Buyer RFPs ──
+
+async def create_rfp(db: AsyncSession, buyer_id: uuid.UUID, **kwargs) -> BuyerRFP:
+    rfp = BuyerRFP(id=uuid.uuid4(), buyer_id=buyer_id, **kwargs)
+    db.add(rfp)
+    await db.commit()
+    await db.refresh(rfp)
+    return rfp
+
+
+async def get_rfp(db: AsyncSession, rfp_id: uuid.UUID) -> BuyerRFP | None:
+    result = await db.execute(select(BuyerRFP).where(BuyerRFP.id == rfp_id))
+    return result.scalar_one_or_none()
+
+
+async def list_rfps_by_buyer(db: AsyncSession, buyer_id: uuid.UUID) -> list[BuyerRFP]:
+    result = await db.execute(select(BuyerRFP).where(BuyerRFP.buyer_id == buyer_id))
+    return list(result.scalars().all())
+
+
+async def list_active_rfps(db: AsyncSession) -> list[BuyerRFP]:
+    result = await db.execute(select(BuyerRFP).where(BuyerRFP.status == "active"))
+    return list(result.scalars().all())
+
+
+_RFP_UPDATABLE = frozenset({
+    "title", "threat_model", "target_environment", "acceptance_criteria",
+    "budget_min_eth", "budget_max_eth", "deadline", "exclusivity_preference",
+    "status", "has_patches", "patch_data", "patch_hash",
+})
+
+
+async def update_rfp(db: AsyncSession, rfp: BuyerRFP, **kwargs) -> BuyerRFP:
+    for key, value in kwargs.items():
+        if key not in _RFP_UPDATABLE:
+            raise ValueError(f"Cannot update RFP field: {key}")
+        setattr(rfp, key, value)
+    await db.commit()
+    await db.refresh(rfp)
+    return rfp
+
+
+# ── RFP Proposals ──
+
+async def create_rfp_proposal(db: AsyncSession, **kwargs) -> RFPProposal:
+    proposal = RFPProposal(id=uuid.uuid4(), **kwargs)
+    db.add(proposal)
+    await db.commit()
+    await db.refresh(proposal)
+    return proposal
+
+
+async def get_rfp_proposal(db: AsyncSession, proposal_id: uuid.UUID) -> RFPProposal | None:
+    result = await db.execute(select(RFPProposal).where(RFPProposal.id == proposal_id))
+    return result.scalar_one_or_none()
+
+
+async def list_proposals_for_rfp(db: AsyncSession, rfp_id: uuid.UUID) -> list[RFPProposal]:
+    result = await db.execute(select(RFPProposal).where(RFPProposal.rfp_id == rfp_id))
+    return list(result.scalars().all())
+
+
+async def update_rfp_proposal(db: AsyncSession, proposal: RFPProposal, **kwargs) -> RFPProposal:
+    for key, value in kwargs.items():
+        setattr(proposal, key, value)
+    await db.commit()
+    await db.refresh(proposal)
+    return proposal

@@ -1,0 +1,108 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-zk-bg text-zk-text font-sans;
+    background-image:
+      linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  h1, h2, h3, h4, h5 {
+    @apply font-mono font-bold uppercase tracking-tight;
+  }
+
+  a {
+    @apply text-zk-link underline underline-offset-2;
+  }
+  a:hover {
+    @apply text-zk-accent;
+  }
+
+  ::selection {
+    @apply bg-zk-accent text-white;
+  }
+}
+
+@layer components {
+  .zk-input {
+    @apply w-full border-2 border-zk-border bg-white px-3 py-2.5 font-mono text-sm
+           focus:outline-none focus:border-zk-accent transition-colors;
+  }
+
+  .zk-textarea {
+    @apply zk-input resize-y min-h-[100px];
+  }
+
+  .zk-select {
+    @apply zk-input appearance-none cursor-pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%230a0a0a' stroke-width='2'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 36px;
+  }
+
+  .zk-btn {
+    @apply inline-flex items-center justify-center border-3 border-zk-border
+           bg-zk-bg px-6 py-2.5 font-mono text-sm font-bold uppercase tracking-wider
+           hover:bg-zk-border hover:text-white transition-colors cursor-pointer;
+  }
+
+  .zk-btn-accent {
+    @apply zk-btn bg-zk-accent text-white border-zk-accent
+           hover:bg-zk-border hover:border-zk-border;
+  }
+
+  .zk-btn-sm {
+    @apply zk-btn px-4 py-1.5 text-xs;
+  }
+
+  .zk-card {
+    @apply border-2 border-zk-border bg-white p-6;
+  }
+
+  .zk-tag {
+    @apply inline-block border border-zk-border px-2 py-0.5
+           font-mono text-label uppercase;
+  }
+
+  .zk-tag-accent {
+    @apply zk-tag border-zk-accent text-zk-accent;
+  }
+
+  .zk-tag-danger {
+    @apply zk-tag border-zk-danger text-zk-danger;
+  }
+
+  .zk-tag-success {
+    @apply zk-tag border-zk-success text-zk-success;
+  }
+
+  .zk-divider {
+    @apply border-t-2 border-zk-border;
+  }
+
+  .zk-label {
+    @apply block font-mono text-label uppercase text-zk-muted mb-1;
+  }
+
+  .zk-section-title {
+    @apply font-mono text-label uppercase tracking-widest text-zk-muted
+           border-b-2 border-zk-border pb-2 mb-4;
+  }
+
+  .zk-stamp {
+    @apply inline-block border-3 px-3 py-1 font-mono font-bold uppercase
+           tracking-wider transform -rotate-2;
+  }
+}

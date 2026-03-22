@@ -15,6 +15,10 @@ from ndai.models.invention import Invention  # noqa: F401
 from ndai.models.agreement import Agreement, AgreementOutcome  # noqa: F401
 from ndai.models.payment import Payment  # noqa: F401
 from ndai.models.audit import AuditLog  # noqa: F401
+from ndai.models.zk_identity import VulnIdentity  # noqa: F401
+from ndai.models.zk_vulnerability import ZKVulnerability, ZKVulnAgreement, ZKVulnOutcome  # noqa: F401
+from ndai.models.bounty import Bounty  # noqa: F401
+from ndai.models.rfp import BuyerRFP, RFPProposal  # noqa: F401
 
 config = context.config
 

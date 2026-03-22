@@ -21,7 +21,7 @@ zdayzk.com, www.zdayzk.com {
 	}
 
 	handle {
-		root * /opt/zdayzk/zdayzk-frontend/dist
+		root * /opt/zdayzk/frontend-zk/dist
 		try_files {path} /index.html
 		file_server
 	}
