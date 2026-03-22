@@ -9,10 +9,13 @@ interface Props {
   targetId: string;
 }
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
 type ScriptType = "bash" | "python3" | "html" | "powershell";
+type SealStatus = "idle" | "attesting" | "encrypting" | "submitting" | "done" | "error";
 
 const ALL_CAPABILITIES = ["ace", "lpe", "info_leak", "callback", "crash", "dos"];
+
+const STEP_LABELS = ["Write PoC", "Seal to Enclave", "Escrow", "Verify"];
 
 export function ProposalPage({ targetId }: Props) {
   const [target, setTarget] = useState<KnownTargetDetail | null>(null);
@@ -28,9 +31,14 @@ export function ProposalPage({ targetId }: Props) {
   const [reliabilityRuns, setReliabilityRuns] = useState(3);
   const [askingPrice, setAskingPrice] = useState("0.1");
 
+  // Seal state
+  const [sealStatus, setSealStatus] = useState<SealStatus>("idle");
+  const [attestationPcr0, setAttestationPcr0] = useState("");
+  const [attestationMode, setAttestationMode] = useState("");
+  const [sealedSize, setSealedSize] = useState(0);
+
   // Proposal state
   const [proposalId, setProposalId] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
   useEffect(() => {
@@ -48,18 +56,23 @@ export function ProposalPage({ targetId }: Props) {
       .finally(() => setLoading(false));
   }, [targetId]);
 
-  async function handleSubmitPoC() {
+  // Step 1 → Step 2: Move to sealing step
+  function handleContinueToSeal() {
     if (!pocScript.trim()) {
       setError("PoC script is required");
       return;
     }
-    setSubmitting(true);
+    setError("");
+    setStep(2);
+  }
+
+  // Step 2: Fetch attestation, encrypt, submit
+  async function handleSealAndSubmit() {
+    setSealStatus("attesting");
     setError("");
     try {
       // 1. Fetch enclave attestation
       const { fetchAttestation } = await import("../../api/enclave");
-      const { eciesEncrypt } = await import("../../crypto/ecies");
-
       const nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)))
         .map((b) => b.toString(16).padStart(2, "0")).join("");
 
@@ -67,13 +80,20 @@ export function ProposalPage({ targetId }: Props) {
       if (attestation.error) throw new Error(attestation.error);
       if (!attestation.enclave_public_key) throw new Error("No enclave public key in attestation");
 
+      setAttestationPcr0(attestation.pcr0?.slice(0, 16) || "");
+      setAttestationMode(attestation.mode);
+
       // 2. Encrypt PoC to enclave's attested public key
+      setSealStatus("encrypting");
+      const { eciesEncrypt } = await import("../../crypto/ecies");
       const pubKeyDER = Uint8Array.from(atob(attestation.enclave_public_key), (c) => c.charCodeAt(0));
       const pocBytes = new TextEncoder().encode(pocScript);
       const sealedPocBytes = await eciesEncrypt(pubKeyDER, pocBytes);
       const sealedPocB64 = btoa(String.fromCharCode(...sealedPocBytes));
+      setSealedSize(sealedPocBytes.length);
 
-      // 3. Submit with sealed_poc (encrypted), not poc_script (plaintext)
+      // 3. Submit sealed proposal
+      setSealStatus("submitting");
       const proposal = await createProposal({
         target_id: targetId,
         sealed_poc: sealedPocB64,
@@ -82,16 +102,21 @@ export function ProposalPage({ targetId }: Props) {
         reliability_runs: reliabilityRuns,
         asking_price_eth: parseFloat(askingPrice) || 0,
       });
+
       setProposalId(proposal.id);
-      if (badge?.has_badge) {
-        setStep(3);
-      } else {
-        setStep(2);
-      }
+      setSealStatus("done");
+
+      // Auto-advance after brief pause
+      setTimeout(() => {
+        if (badge?.has_badge) {
+          setStep(4);
+        } else {
+          setStep(3);
+        }
+      }, 1500);
     } catch (err: any) {
-      setError(err.detail || "Failed to submit proposal");
-    } finally {
-      setSubmitting(false);
+      setSealStatus("error");
+      setError(err.detail || err.message || "Sealing failed");
     }
   }
 
@@ -100,7 +125,7 @@ export function ProposalPage({ targetId }: Props) {
     setError("");
     try {
       await confirmDeposit(proposalId, txHash);
-      setStep(3);
+      setStep(4);
     } catch (err: any) {
       setError(err.detail || "Failed to confirm deposit");
     }
@@ -149,26 +174,34 @@ export function ProposalPage({ targetId }: Props) {
         {target.icon_emoji} {target.display_name} v{target.current_version}
       </p>
 
-      {/* Step indicator */}
+      {/* Step indicator — 4 steps */}
       <div className="flex items-center gap-0 mb-6">
-        {[1, 2, 3].map((s, i) => (
-          <React.Fragment key={s}>
-            {i > 0 && (
-              <div className={`flex-1 h-0.5 ${step >= s ? "bg-zk-accent" : "bg-zk-border"}`} />
-            )}
-            <div
-              className={`w-7 h-7 flex items-center justify-center text-[10px] font-mono font-bold border-2 ${
-                step > s
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-600"
-                  : step === s
-                  ? "bg-zk-bg text-zk-accent border-zk-accent"
-                  : "bg-white text-zk-dim border-zk-border"
-              }`}
-            >
-              {step > s ? "\u2713" : s}
-            </div>
-          </React.Fragment>
-        ))}
+        {STEP_LABELS.map((label, i) => {
+          const s = i + 1;
+          return (
+            <React.Fragment key={s}>
+              {i > 0 && (
+                <div className={`flex-1 h-0.5 ${step >= s ? "bg-zk-accent" : "bg-zk-border"}`} />
+              )}
+              <div className="flex flex-col items-center gap-1">
+                <div
+                  className={`w-7 h-7 flex items-center justify-center text-[10px] font-mono font-bold border-2 ${
+                    step > s
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-600"
+                      : step === s
+                      ? "bg-zk-bg text-zk-accent border-zk-accent"
+                      : "bg-white text-zk-dim border-zk-border"
+                  }`}
+                >
+                  {step > s ? "\u2713" : s}
+                </div>
+                <span className={`text-[9px] font-mono uppercase ${step === s ? "text-zk-accent font-bold" : "text-zk-dim"}`}>
+                  {label}
+                </span>
+              </div>
+            </React.Fragment>
+          );
+        })}
       </div>
 
       {error && (
@@ -177,7 +210,7 @@ export function ProposalPage({ targetId }: Props) {
         </div>
       )}
 
-      {/* Step 1: PoC Editor */}
+      {/* Step 1: Write PoC */}
       {step === 1 && (
         <div className="space-y-5">
           <div className="border-3 border-zk-border bg-white p-6 space-y-4">
@@ -234,17 +267,100 @@ export function ProposalPage({ targetId }: Props) {
           </div>
 
           <button
-            onClick={handleSubmitPoC}
-            disabled={submitting || !pocScript.trim()}
+            onClick={handleContinueToSeal}
+            disabled={!pocScript.trim()}
             className="w-full py-3 bg-zk-text text-white font-mono font-bold text-sm uppercase tracking-wider hover:bg-zk-accent disabled:opacity-50 transition-colors"
           >
-            {submitting ? "ENCRYPTING TO ENCLAVE..." : "SEAL & SUBMIT POC"}
+            CONTINUE TO SEAL
           </button>
         </div>
       )}
 
-      {/* Step 2: Escrow */}
+      {/* Step 2: Seal to Enclave */}
       {step === 2 && (
+        <div className="space-y-5">
+          <div className="border-3 border-zk-border bg-white p-6 space-y-4">
+            <h2 className="text-sm font-mono font-bold text-zk-text uppercase flex items-center gap-2">
+              <span className="w-5 h-5 flex items-center justify-center border-2 border-zk-accent text-zk-accent text-[10px] font-mono">2</span>
+              Seal to Enclave
+            </h2>
+
+            <p className="text-xs text-zk-muted font-mono leading-relaxed">
+              Your PoC will be encrypted to the verification enclave's attested public key.
+              The platform operator cannot read your exploit — only the hardware-isolated
+              enclave can decrypt it.
+            </p>
+
+            {/* Seal progress */}
+            <div className="bg-zk-bg border-2 border-zk-border p-4 space-y-3">
+              <SealStep
+                label="Fetch enclave attestation"
+                detail={attestationPcr0 ? `PCR0: ${attestationPcr0}... (${attestationMode})` : undefined}
+                status={sealStatus === "attesting" ? "active" : sealStatus === "idle" ? "pending" : "done"}
+              />
+              <SealStep
+                label="Encrypt PoC (ECIES P-384 + AES-256-GCM)"
+                detail={sealedSize ? `${sealedSize} bytes ciphertext` : undefined}
+                status={sealStatus === "encrypting" ? "active" : ["idle", "attesting"].includes(sealStatus) ? "pending" : "done"}
+              />
+              <SealStep
+                label="Submit sealed proposal"
+                status={sealStatus === "submitting" ? "active" : ["idle", "attesting", "encrypting"].includes(sealStatus) ? "pending" : "done"}
+              />
+            </div>
+
+            {sealStatus === "done" && (
+              <div className="border-2 border-emerald-600 bg-emerald-50 p-3">
+                <p className="text-xs font-mono text-emerald-700 font-bold uppercase">
+                  PoC sealed. Only the enclave can decrypt it.
+                </p>
+              </div>
+            )}
+
+            {sealStatus === "error" && (
+              <div className="border-2 border-red-600 bg-red-50 p-3">
+                <p className="text-xs font-mono text-red-700">
+                  Sealing failed. Your PoC was NOT sent. Try again.
+                </p>
+              </div>
+            )}
+
+            {/* Trust explainer */}
+            {sealStatus === "idle" && (
+              <div className="text-[11px] text-zk-dim font-mono space-y-1">
+                <p>1. The attestation is signed by AWS Nitro hardware, not the host</p>
+                <p>2. PCR0 proves the exact code running in the enclave</p>
+                <p>3. The public key is bound to the attestation — MITM is detectable</p>
+                <p>4. Your PoC is encrypted client-side — plaintext never leaves your browser</p>
+              </div>
+            )}
+          </div>
+
+          {sealStatus === "idle" || sealStatus === "error" ? (
+            <>
+              <button
+                onClick={handleSealAndSubmit}
+                className="w-full py-3 bg-zk-text text-white font-mono font-bold text-sm uppercase tracking-wider hover:bg-zk-accent transition-colors"
+              >
+                SEAL & SUBMIT
+              </button>
+              <button
+                onClick={() => { setStep(1); setSealStatus("idle"); setError(""); }}
+                className="w-full py-2.5 bg-white border-3 border-zk-border text-zk-text font-mono font-bold text-sm uppercase tracking-wider hover:bg-zk-bg transition-colors"
+              >
+                Back
+              </button>
+            </>
+          ) : sealStatus !== "done" ? (
+            <div className="text-center text-xs font-mono text-zk-muted animate-pulse">
+              Sealing in progress...
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* Step 3: Escrow */}
+      {step === 3 && (
         <div className="space-y-5">
           <EscrowDeposit
             requiredAmountEth={escrowEth}
@@ -253,7 +369,7 @@ export function ProposalPage({ targetId }: Props) {
           />
 
           <button
-            onClick={() => setStep(1)}
+            onClick={() => setStep(2)}
             className="w-full py-2.5 bg-white border-3 border-zk-border text-zk-text font-mono font-bold text-sm uppercase tracking-wider hover:bg-zk-bg transition-colors"
           >
             Back
@@ -261,8 +377,8 @@ export function ProposalPage({ targetId }: Props) {
         </div>
       )}
 
-      {/* Step 3: Confirmation */}
-      {step === 3 && (
+      {/* Step 4: Confirm & Verify */}
+      {step === 4 && (
         <div className="space-y-5">
           <div className="border-3 border-zk-border bg-white p-6 space-y-4">
             <h2 className="text-sm font-mono font-bold text-zk-text uppercase flex items-center gap-2">
@@ -295,6 +411,16 @@ export function ProposalPage({ targetId }: Props) {
                 <span className="text-zk-muted">Deposit</span>
                 <span className="text-emerald-700 font-bold">{badge?.has_badge ? "Waived (badge)" : "Confirmed"}</span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-zk-muted">PoC Sealed</span>
+                <span className="text-emerald-700 font-bold">{sealedSize} bytes ciphertext</span>
+              </div>
+              {attestationPcr0 && (
+                <div className="flex justify-between">
+                  <span className="text-zk-muted">Enclave PCR0</span>
+                  <span className="text-zk-text">{attestationPcr0}...</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -307,13 +433,49 @@ export function ProposalPage({ targetId }: Props) {
           </button>
 
           <button
-            onClick={() => setStep(badge?.has_badge ? 1 : 2)}
+            onClick={() => setStep(badge?.has_badge ? 2 : 3)}
             className="w-full py-2.5 bg-white border-3 border-zk-border text-zk-text font-mono font-bold text-sm uppercase tracking-wider hover:bg-zk-bg transition-colors"
           >
             Back
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// Sub-component for seal progress steps
+function SealStep({ label, detail, status }: { label: string; detail?: string; status: "pending" | "active" | "done" }) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className={`w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 ${
+        status === "done"
+          ? "text-emerald-600"
+          : status === "active"
+          ? "text-zk-accent animate-pulse"
+          : "text-zk-dim"
+      }`}>
+        {status === "done" ? (
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        ) : status === "active" ? (
+          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+          </svg>
+        ) : (
+          <div className="w-2 h-2 rounded-full bg-zk-border" />
+        )}
+      </div>
+      <div>
+        <span className={`text-xs font-mono ${status === "active" ? "text-zk-accent font-bold" : status === "done" ? "text-zk-text" : "text-zk-dim"}`}>
+          {label}
+        </span>
+        {detail && (
+          <div className="text-[10px] font-mono text-zk-muted mt-0.5">{detail}</div>
+        )}
+      </div>
     </div>
   );
 }
