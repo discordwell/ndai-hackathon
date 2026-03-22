@@ -32,7 +32,9 @@ FROM amazonlinux:2023
 WORKDIR /app
 
 # Install Python 3.11 and ca-certificates for TLS verification
-RUN dnf install -y python3.11 ca-certificates shadow-utils && dnf clean all
+RUN dnf install -y python3.11 ca-certificates shadow-utils && dnf clean all \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python
 
 # Copy installed packages from builder (Python 3.11 site-packages)
 COPY --from=builder /install/lib/python3.11/site-packages /usr/lib/python3.11/site-packages/
