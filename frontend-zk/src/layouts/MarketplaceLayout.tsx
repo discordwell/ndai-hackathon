@@ -5,6 +5,8 @@ const NAV_ITEMS = [
   { label: "BROWSE", hash: "#/browse" },
   { label: "SELL", hash: "#/sell" },
   { label: "BUY", hash: "#/buy" },
+  { label: "TARGETS", hash: "#/targets" },
+  { label: "PROPOSALS", hash: "#/proposals" },
   { label: "DEALS", hash: "#/deals" },
   { label: "MESSAGES", hash: "#/messages" },
 ];

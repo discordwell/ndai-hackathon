@@ -18,6 +18,11 @@ import { DealPage } from "../pages/deals/DealPage";
 import { InboxPage } from "../pages/messages/InboxPage";
 import { ConversationPage } from "../pages/messages/ConversationPage";
 import { NewConversationPage } from "../pages/messages/NewConversationPage";
+import { TargetsPage } from "../pages/targets/TargetsPage";
+import { TargetDetailPage } from "../pages/targets/TargetDetailPage";
+import { MyProposalsPage } from "../pages/proposals/MyProposalsPage";
+import { ProposalPage } from "../pages/proposals/ProposalPage";
+import { ProposalStatusPage } from "../pages/proposals/ProposalStatusPage";
 
 function useHash(): string {
   const [hash, setHash] = useState(window.location.hash || "#/");
@@ -83,6 +88,22 @@ export function Router() {
   if (msgDealMatch) content = <ConversationPage conversationId={msgDealMatch[1]} />;
   const msgMatch = path.match(/^\/messages\/([^/]+)$/);
   if (msgMatch && !path.startsWith("/messages/new") && !path.startsWith("/messages/deal/")) content = <ConversationPage conversationId={msgMatch[1]} />;
+
+  // Targets
+  if (path === "/targets") content = <TargetsPage />;
+  const targetMatch = path.match(/^\/targets\/(.+)$/);
+  if (targetMatch) content = <TargetDetailPage targetId={targetMatch[1]} />;
+
+  // Proposals
+  if (path === "/proposals") content = <MyProposalsPage />;
+  if (path === "/proposals/new") {
+    const params = new URLSearchParams(window.location.hash.split("?")[1] || "");
+    const targetId = params.get("target");
+    if (targetId) content = <ProposalPage targetId={targetId} />;
+    else content = <TargetsPage />;
+  }
+  const proposalMatch = path.match(/^\/proposals\/([^/]+)$/);
+  if (proposalMatch && path !== "/proposals/new") content = <ProposalStatusPage proposalId={proposalMatch[1]} />;
 
   if (content) {
     return <MarketplaceLayout>{content}</MarketplaceLayout>;
