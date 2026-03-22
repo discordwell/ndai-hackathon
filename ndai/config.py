@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     enclave_memory_mib: int = 1600
     enclave_eif_path: str = "ndai_enclave.eif"
     enclave_vsock_port: int = 5000
+    enclave_cid: int = 16  # Enclave CID (assigned at launch, check nitro-cli describe-enclaves)
 
     # Security parameters (paper defaults)
     shamir_k: int = 3
