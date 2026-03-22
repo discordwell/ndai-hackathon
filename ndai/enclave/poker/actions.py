@@ -18,6 +18,7 @@ from ndai.enclave.poker.engine import (
 )
 from ndai.enclave.poker.state import PlayerAction, PlayerSeat, TableState
 from ndai.enclave.poker.views import make_table_view
+from ndai.enclave.verification import SessionVerificationChain
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +183,28 @@ def _handle_start_hand(
     if table.hand is not None and not table.hand.hand_over:
         return {"status": "error", "error": "Hand already in progress"}
 
+    # Initialize verification chain for this hand
+    chain = SessionVerificationChain(session_id=f"{table.table_id}:hand")
+    table.hand_verification = chain
+
     events, player_hands = start_hand(table)
+
+    # Record verification events
+    seated = [s.player_id for s in table.seated_players()]
+    chain.record("hand_start", {
+        "hand_number": table.hand.hand_number,
+        "dealer_seat": table.hand.dealer_seat,
+        "players": seated,
+        "blinds": [table.small_blind, table.big_blind],
+    }, f"Hand #{table.hand.hand_number} started with {len(seated)} players")
+
+    chain.record("deck_shuffled", {
+        "seed_hash": table.hand.deck_seed_hash,
+    }, "Deck shuffled with CSPRNG inside TEE (seed sealed)")
+
+    chain.record("hole_cards_dealt", {
+        "player_count": len(player_hands),
+    }, f"Hole cards dealt to {len(player_hands)} players")
 
     # Convert Card objects to dicts for JSON serialization
     serialized_hands: dict[str, list[dict]] = {}
@@ -219,16 +241,48 @@ def _handle_player_action(
 
     events = process_action(table, player_id, action, amount)
 
+    # Record verification event
+    chain = table.hand_verification
+    if chain:
+        chain.record("player_action", {
+            "player_id": player_id,
+            "action": action_str,
+            "amount": amount,
+        }, f"Player {player_id[:8]}... {action_str}" + (f" {amount}" if amount else ""))
+
+        # Record community card events
+        for event in events:
+            if event.get("type") == "community_cards":
+                cards = event.get("cards", [])
+                phase = event.get("phase", "")
+                chain.record("community_cards", {
+                    "phase": phase,
+                    "card_count": len(cards),
+                }, f"{phase.capitalize()}: {len(cards)} community card(s) revealed")
+
+            if event.get("type") == "showdown":
+                chain.record("showdown", {
+                    "results": event.get("results", []),
+                }, "Showdown: hands evaluated deterministically")
+
     response: dict[str, Any] = {
         "status": "ok",
         "events": events,
         "table_view": make_table_view(table, player_id),
     }
 
-    # If hand is over, include the result hash for on-chain settlement
+    # If hand is over, finalize verification and include it
     if table.hand and table.hand.hand_over:
         response["hand_over"] = True
         response["deck_seed_hash"] = table.hand.deck_seed_hash
+
+        if chain:
+            chain.record("hand_settled", {
+                "deck_seed_hash": table.hand.deck_seed_hash,
+            }, "Hand complete — deck seed hash published for verification")
+            report = chain.finalize()
+            response["verification"] = report.to_dict()
+            table.hand_verification = None
 
     return response
 
@@ -244,11 +298,35 @@ def _handle_timeout(
     seat_index = int(request.get("seat_index", -1))
     events = process_timeout(table, seat_index)
 
-    return {
+    # Record timeout as a player action in verification chain
+    chain = table.hand_verification
+    if chain:
+        seat = table.seats[seat_index] if 0 <= seat_index < len(table.seats) else None
+        pid = seat.player_id if seat else "unknown"
+        chain.record("player_action", {
+            "player_id": pid,
+            "action": "timeout_fold",
+            "seat_index": seat_index,
+        }, f"Player {pid[:8]}... timed out (auto-fold)")
+
+    response: dict[str, Any] = {
         "status": "ok",
         "events": events,
         "table_view": make_table_view(table),
     }
+
+    # If hand ended due to timeout, finalize verification
+    if table.hand and table.hand.hand_over and chain:
+        response["hand_over"] = True
+        response["deck_seed_hash"] = table.hand.deck_seed_hash
+        chain.record("hand_settled", {
+            "deck_seed_hash": table.hand.deck_seed_hash,
+        }, "Hand complete — deck seed hash published for verification")
+        report = chain.finalize()
+        response["verification"] = report.to_dict()
+        table.hand_verification = None
+
+    return response
 
 
 def _handle_get_table(

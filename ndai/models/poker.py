@@ -64,6 +64,7 @@ class PokerHand(Base):
     pots_awarded: Mapped[dict | None] = mapped_column(JSONB)
     result_hash: Mapped[str | None] = mapped_column(String(66))
     deck_seed_hash: Mapped[str | None] = mapped_column(String(66))
+    verification_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     settlement_tx_hash: Mapped[str | None] = mapped_column(String(66))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

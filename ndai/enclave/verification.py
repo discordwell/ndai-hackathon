@@ -52,6 +52,14 @@ _CLAIM_TEMPLATES: dict[str, str] = {
     "llm_call": "LLM called {count} time(s) with egress logging",
     "sensitive_data_cleared": "Sensitive data deleted from session memory",
     "result_produced": "Result produced and validated against policy",
+    # Poker-specific claims
+    "hand_start": "Hand initialized with dealer rotation inside TEE",
+    "deck_shuffled": "Deck shuffled with CSPRNG (hardware entropy) via Fisher-Yates",
+    "hole_cards_dealt": "Hole cards dealt to players (sealed inside enclave)",
+    "player_action": "Player action validated and applied deterministically",
+    "community_cards": "Community cards revealed from sealed deck",
+    "showdown": "Hands evaluated and winner determined deterministically",
+    "hand_settled": "Chips distributed to winners, seed hash published for verification",
 }
 
 

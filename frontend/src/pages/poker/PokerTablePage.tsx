@@ -4,6 +4,7 @@ import { usePokerStream } from "../../hooks/usePokerStream";
 import { getTableState, joinTable, leaveTable, submitAction, startHand } from "../../api/poker";
 import { PokerTable } from "../../components/poker/PokerTable";
 import HandResultOverlay from "../../components/poker/HandResultOverlay";
+import { VerificationPanel } from "../../components/shared/VerificationPanel";
 import type { TableView } from "../../api/pokerTypes";
 
 export function PokerTablePage({ tableId }: { tableId: string }) {
@@ -15,6 +16,7 @@ export function PokerTablePage({ tableId }: { tableId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
   const [handResult, setHandResult] = useState<any>(null);
+  const [handVerification, setHandVerification] = useState<any>(null);
 
   // Auto-dismiss errors
   useEffect(() => {
@@ -36,7 +38,7 @@ export function PokerTablePage({ tableId }: { tableId: string }) {
     if (streamView) setTableView(streamView);
   }, [streamView]);
 
-  // Show hand result overlay on showdown
+  // Show hand result overlay on showdown, capture verification
   useEffect(() => {
     if (lastEvent?.type === "showdown" && lastEvent.data?.results?.length > 0) {
       const winner = lastEvent.data.results[0];
@@ -48,6 +50,13 @@ export function PokerTablePage({ tableId }: { tableId: string }) {
         hand_rank: "Last standing",
         amount: lastEvent.data.amount,
       });
+    }
+    if (lastEvent?.type === "hand_verification") {
+      setHandVerification(lastEvent.data?.verification || null);
+    }
+    // Clear verification when new hand starts
+    if (lastEvent?.type === "hand_start") {
+      setHandVerification(null);
     }
   }, [lastEvent]);
 
@@ -126,6 +135,13 @@ export function PokerTablePage({ tableId }: { tableId: string }) {
 
       {/* Poker table */}
       <PokerTable tableView={tableView} myPlayerId={userId} onAction={handleAction} />
+
+      {/* Verification panel — slides in from bottom-left after hand completes */}
+      {handVerification && (
+        <div className="absolute bottom-4 left-4 z-40 w-96 max-h-[60vh] overflow-y-auto shadow-2xl rounded-xl">
+          <VerificationPanel verification={handVerification} />
+        </div>
+      )}
 
       {/* Sit Down button */}
       {!isSeated && tableView && !showBuyIn && (

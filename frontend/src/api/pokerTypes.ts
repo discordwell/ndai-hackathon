@@ -77,3 +77,8 @@ export interface GameEvent {
   type: string;
   data: Record<string, any>;
 }
+
+export interface HandVerification {
+  verification: any;
+  deck_seed_hash?: string;
+}

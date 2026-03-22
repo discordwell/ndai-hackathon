@@ -197,6 +197,12 @@ async def _do_start_hand(table_id: str) -> None:
     # Broadcast events (cards_dealt events get per-player filtering)
     await _broadcast_events(table_id, events, player_hands)
 
+    # If hand ended immediately (unlikely but possible), broadcast verification
+    if result.get("verification"):
+        await _emit_poker_event(table_id, "hand_verification", {
+            "verification": result["verification"],
+        })
+
     # Also send each player their hole cards as a dedicated event
     for player_id, cards in player_hands.items():
         queues = _table_queues.get(table_id, {})
@@ -491,8 +497,35 @@ async def submit_action(
     # Broadcast events
     await _broadcast_events(table_id, events)
 
-    # If hand is over, settle on-chain and auto-start next hand
+    # If hand is over, broadcast verification and settle on-chain
     if result.get("hand_over"):
+        # Broadcast verification chain to all players
+        verification = result.get("verification")
+        if verification:
+            await _emit_poker_event(table_id, "hand_verification", {
+                "verification": verification,
+                "deck_seed_hash": result.get("deck_seed_hash", ""),
+            })
+
+            # Persist verification data to DB
+            try:
+                async with async_session() as db:
+                    hand_end = next((e for e in events if e.get("type") == "hand_end"), None)
+                    hand_number = hand_end.get("hand_number", 0) if hand_end else 0
+                    if hand_number:
+                        db_result = await db.execute(
+                            select(PokerHand).where(
+                                PokerHand.table_id == uuid.UUID(table_id),
+                                PokerHand.hand_number == hand_number,
+                            )
+                        )
+                        hand_row = db_result.scalar_one_or_none()
+                        if hand_row:
+                            hand_row.verification_data = verification
+                            await db.commit()
+            except Exception:
+                logger.warning("Failed to persist poker hand verification data")
+
         task = asyncio.create_task(_settle_and_continue(table_id, events))
         _tasks.add(task)
         task.add_done_callback(_tasks.discard)
@@ -594,4 +627,5 @@ async def get_hand_result(
         "pots_awarded": hand.pots_awarded,
         "result_hash": hand.result_hash,
         "deck_seed_hash": hand.deck_seed_hash,
+        "verification": hand.verification_data,
     }

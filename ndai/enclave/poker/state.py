@@ -133,6 +133,7 @@ class TableState:
     dealer_seat: int = 0  # persists across hands for rotation
     action_timeout_sec: int = 30
     escrow_contract: str = ""
+    hand_verification: Any = None  # SessionVerificationChain for current hand
 
     def __post_init__(self) -> None:
         if not self.seats:
