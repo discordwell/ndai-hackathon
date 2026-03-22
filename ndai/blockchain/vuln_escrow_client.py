@@ -73,35 +73,41 @@ class VulnEscrowClient:
         self,
         seller_address: str,
         operator_address: str,
-        reserve_price_wei: int,
+        price_wei: int,
         deadline: int,
-        budget_cap_wei: int,
-        discovery_timestamp: int,
-        embargo_days: int,
         is_exclusive: bool,
         private_key: str,
+        funding_wei: int | None = None,
     ) -> str:
+        """Deploy a new VulnEscrow. Caller is the buyer.
+
+        Args:
+            price_wei: Seller's asking price.
+            funding_wei: Amount to fund the escrow (must be >= price_wei).
+                         Defaults to price_wei if not specified.
+        """
+        if funding_wei is None:
+            funding_wei = price_wei
         fn = self._factory.functions.createEscrow(
             AsyncWeb3.to_checksum_address(seller_address),
             AsyncWeb3.to_checksum_address(operator_address),
-            reserve_price_wei,
+            price_wei,
             deadline,
-            discovery_timestamp,
-            embargo_days,
             is_exclusive,
         )
-        return await self._send_tx(fn, private_key, value_wei=budget_cap_wei)
+        return await self._send_tx(fn, private_key, value_wei=funding_wei)
 
-    async def submit_outcome(
+    async def submit_verification(
         self,
         escrow_address: str,
-        final_price_wei: int,
         attestation_hash: bytes,
-        decay_numerator: int,
+        delivery_hash: bytes,
+        key_commitment: bytes,
         private_key: str,
     ) -> str:
+        """TEE operator submits verification result + sealed delivery commitments."""
         contract = self._escrow_contract(escrow_address)
-        fn = contract.functions.submitOutcome(final_price_wei, attestation_hash, decay_numerator)
+        fn = contract.functions.submitVerification(attestation_hash, delivery_hash, key_commitment)
         return await self._send_tx(fn, private_key)
 
     async def report_patch(self, escrow_address: str, private_key: str) -> str:
@@ -127,23 +133,20 @@ class VulnEscrowClient:
     async def get_deal_state(self, escrow_address: str) -> VulnDealState:
         c = self._escrow_contract(escrow_address)
         (
-            seller, buyer, operator, reserve, budget, final_price,
-            decay_adjusted, decay_num, att_hash, dl,
-            discovery_ts, embargo_end, is_excl, is_patched, state_val, balance
+            seller, buyer, operator_addr, platform, price_val,
+            dl, is_excl, att_hash, del_hash, key_comm,
+            is_patched, state_val, balance
         ) = await asyncio.gather(
             c.functions.seller().call(),
             c.functions.buyer().call(),
             c.functions.operator().call(),
-            c.functions.reservePrice().call(),
-            c.functions.budgetCap().call(),
-            c.functions.finalPrice().call(),
-            c.functions.decayAdjustedPrice().call(),
-            c.functions.decayNumerator().call(),
-            c.functions.attestationHash().call(),
+            c.functions.platform().call(),
+            c.functions.price().call(),
             c.functions.deadline().call(),
-            c.functions.discoveryTimestamp().call(),
-            c.functions.embargoEndTimestamp().call(),
             c.functions.isExclusive().call(),
+            c.functions.attestationHash().call(),
+            c.functions.deliveryHash().call(),
+            c.functions.keyCommitment().call(),
             c.functions.isPatchedBeforeSettlement().call(),
             c.functions.state().call(),
             self._w3.eth.get_balance(AsyncWeb3.to_checksum_address(escrow_address)),
@@ -151,17 +154,14 @@ class VulnEscrowClient:
         return VulnDealState(
             seller=seller,
             buyer=buyer,
-            operator=operator,
-            reserve_price_wei=reserve,
-            budget_cap_wei=budget,
-            final_price_wei=final_price,
-            decay_adjusted_price_wei=decay_adjusted,
-            decay_numerator=decay_num,
-            attestation_hash=att_hash,
+            operator=operator_addr,
+            platform=platform,
+            price_wei=price_val,
             deadline=dl,
-            discovery_timestamp=discovery_ts,
-            embargo_end_timestamp=embargo_end,
             is_exclusive=is_excl,
+            attestation_hash=att_hash,
+            delivery_hash=del_hash,
+            key_commitment=key_comm,
             is_patched=is_patched,
             state=VulnEscrowState(state_val),
             balance_wei=balance,

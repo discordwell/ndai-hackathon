@@ -84,6 +84,38 @@ POC_DANGEROUS_PATTERNS = [
     re.compile(r"pip\s+install", re.IGNORECASE),    # No package installation in PoC
 ]
 
+# Build steps: whitelisted command prefixes (compile from source, etc.)
+BUILD_STEP_ALLOWED_PREFIXES = (
+    "gcc ", "g++ ", "cc ",
+    "make", "cmake ",
+    "cp ", "mv ",
+    "chmod ", "chown ",
+    "ln ", "mkdir ",
+    "install ",
+    "ldconfig",
+    "ar ", "ranlib ",
+    "strip ",
+)
+
+# Build steps: blocked patterns (no network, no package management, no shell tricks)
+BUILD_STEP_BLOCKED_PATTERNS = [
+    re.compile(r"curl\s", re.IGNORECASE),
+    re.compile(r"wget\s", re.IGNORECASE),
+    re.compile(r"apt-get\s", re.IGNORECASE),
+    re.compile(r"apt\s", re.IGNORECASE),
+    re.compile(r"yum\s", re.IGNORECASE),
+    re.compile(r"pip\s", re.IGNORECASE),
+    re.compile(r"npm\s", re.IGNORECASE),
+    re.compile(r"rm\s+-rf\s+/", re.IGNORECASE),
+    re.compile(r"\|.*sh\b", re.IGNORECASE),         # pipe to shell
+    re.compile(r"\$\(", re.IGNORECASE),              # command substitution
+    re.compile(r"`", re.IGNORECASE),                 # backtick command substitution
+    re.compile(r"/app/ndai/", re.IGNORECASE),        # enclave runtime
+]
+
+MAX_BUILD_STEPS = 20
+MAX_BUILD_STEP_LENGTH = 2048
+
 # Size limits
 MAX_CONFIG_FILE_SIZE = 1 * 1024 * 1024     # 1 MB per config file
 MAX_CONFIG_FILE_COUNT = 20
@@ -145,11 +177,39 @@ def validate_target_spec(spec: TargetSpec) -> list[str]:
         if not HEALTH_CHECK_PATTERN.match(svc.health_check):
             errors.append(f"Invalid health check: '{svc.health_check}'")
 
+    # Build steps validation
+    errors.extend(_validate_build_steps(spec.build_steps))
+
     # PoC validation
     errors.extend(_validate_poc(spec.poc))
 
     # Claimed capability validation
     errors.extend(_validate_capability(spec.claimed_capability))
+
+    return errors
+
+
+def _validate_build_steps(steps: list[str]) -> list[str]:
+    """Validate custom build steps."""
+    errors: list[str] = []
+
+    if len(steps) > MAX_BUILD_STEPS:
+        errors.append(f"Too many build steps: {len(steps)} > {MAX_BUILD_STEPS}")
+
+    for i, step in enumerate(steps):
+        if len(step) > MAX_BUILD_STEP_LENGTH:
+            errors.append(f"Build step {i} too long: {len(step)} > {MAX_BUILD_STEP_LENGTH}")
+
+        # Check that step starts with a whitelisted command
+        if not any(step.startswith(prefix) for prefix in BUILD_STEP_ALLOWED_PREFIXES):
+            errors.append(
+                f"Build step {i} uses non-whitelisted command: '{step[:50]}...'"
+            )
+
+        # Check for blocked patterns
+        for pattern in BUILD_STEP_BLOCKED_PATTERNS:
+            if pattern.search(step):
+                errors.append(f"Blocked pattern in build step {i}: {pattern.pattern}")
 
     return errors
 

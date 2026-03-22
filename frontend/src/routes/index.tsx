@@ -33,6 +33,7 @@ import { VulnMarketplacePage } from "../pages/vuln/VulnMarketplacePage";
 import { VulnSubmitPage } from "../pages/vuln/VulnSubmitPage";
 import { VulnListPage } from "../pages/vuln/VulnListPage";
 import { VulnDealPage } from "../pages/vuln/VulnDealPage";
+import { VulnDemoPage } from "../pages/vuln/VulnDemoPage";
 
 function useHash(): string {
   const [hash, setHash] = useState(window.location.hash || "#/login");
@@ -159,6 +160,8 @@ export function Router() {
   if (path === "/vuln") return <VulnLayout><VulnMarketplacePage /></VulnLayout>;
   if (path === "/vuln/submit") return <VulnLayout><VulnSubmitPage /></VulnLayout>;
   if (path === "/vuln/mine") return <VulnLayout><VulnListPage /></VulnLayout>;
+  const vulnDemoMatch = path.match(/^\/vuln\/demo\/([^/]+)$/);
+  if (vulnDemoMatch) return <VulnLayout><VulnDemoPage dealId={vulnDemoMatch[1]} /></VulnLayout>;
   const vulnDealMatch = path.match(/^\/vuln\/deals\/([^/]+)$/);
   if (vulnDealMatch) return <VulnLayout><VulnDealPage dealId={vulnDealMatch[1]} /></VulnLayout>;
 

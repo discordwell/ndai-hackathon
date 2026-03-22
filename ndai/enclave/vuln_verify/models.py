@@ -112,6 +112,7 @@ class TargetSpec:
     - Base OS image (must be whitelisted)
     - Packages with pinned versions
     - Configuration files
+    - Custom build steps (compile from source, etc.)
     - Services to start
     - The PoC script and expected outcome
     """
@@ -122,6 +123,8 @@ class TargetSpec:
     services: list[ServiceSpec]
     poc: PoCSpec
     claimed_capability: ClaimedCapability
+    # Custom build commands run after package install (e.g., compile from source)
+    build_steps: list[str] = field(default_factory=list)
     # Service user that the target runs as (for oracle permission setup)
     service_user: str = "www-data"
     # Legacy field, kept for backward compat

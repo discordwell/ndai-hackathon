@@ -1,0 +1,64 @@
+# CVE-2024-3094 Target Environment — XZ Utils Backdoor Reproduction
+#
+# Builds a Debian 12 container with:
+#   - OpenSSH server
+#   - Backdoored liblzma (LD_PRELOAD hook)
+#   - Trigger service (feeds payloads through RSA_public_decrypt)
+#   - Oracle canary directory
+#
+# This reproduces the vulnerable environment for NDAI marketplace
+# verification. The backdoor hook is loaded via LD_PRELOAD when
+# sshd starts, intercepting RSA_public_decrypt just like the
+# original CVE-2024-3094.
+
+FROM debian:12
+
+# Install dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssh-server \
+    libssl-dev \
+    gcc \
+    libc6-dev \
+    python3 \
+    ca-certificates \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create SSH directory and generate host keys
+RUN mkdir -p /run/sshd && \
+    ssh-keygen -A && \
+    sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+    echo "root:ndai-demo-2024" | chpasswd
+
+# Copy backdoor source
+WORKDIR /opt/backdoor
+COPY backdoor_hook.c .
+COPY test_ed448_public.h .
+COPY trigger_service.c .
+COPY build_backdoor.sh .
+
+# Compile backdoor hook and trigger service
+RUN gcc -shared -fPIC -o /usr/lib/liblzma_backdoor.so \
+    backdoor_hook.c \
+    -I/opt/backdoor \
+    -lssl -lcrypto -ldl \
+    -Wall -Wextra -Wno-unused-parameter -O2
+
+RUN gcc -o /usr/local/bin/trigger_service \
+    trigger_service.c \
+    -lssl -lcrypto \
+    -Wall -Wextra -Wno-unused-parameter -O2
+
+# Create oracle directory (canary will be planted at runtime by OracleManager)
+RUN mkdir -p /var/lib/ndai-oracle && chmod 755 /var/lib/ndai-oracle
+
+# Create poc user (for RLIMIT-restricted PoC execution)
+RUN useradd --system --no-create-home poc
+
+# Entrypoint: start sshd with backdoor hook + trigger service
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 22 4444
+
+ENTRYPOINT ["/entrypoint.sh"]

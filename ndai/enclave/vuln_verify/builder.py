@@ -52,6 +52,7 @@ class EIFBuilder:
         """Generate a Dockerfile from the target specification."""
         package_install = self._render_package_install(spec.packages)
         config_copies = self._render_config_copies(spec.config_files)
+        build_steps = self._render_build_steps(spec.build_steps)
         service_setup = self._render_service_setup(spec.services)
 
         return f"""# Auto-generated per-target EIF for spec {spec.spec_id}
@@ -65,6 +66,9 @@ FROM {spec.base_image} AS target
 
 # Apply configuration files
 {config_copies}
+
+# Custom build steps
+{build_steps}
 
 # Service setup
 {service_setup}
@@ -102,6 +106,7 @@ ENTRYPOINT ["python3", "-m", "ndai.enclave.app"]
             "base_image": spec.base_image,
             "packages": [(p.name, p.version) for p in spec.packages],
             "config_files": [(c.path, hashlib.sha256(c.content.encode()).hexdigest()) for c in spec.config_files],
+            "build_steps": spec.build_steps,
             "services": [(s.name, s.start_command) for s in spec.services],
         }, sort_keys=True)
         return hashlib.sha256(canonical.encode()).hexdigest()[:16]
@@ -209,6 +214,14 @@ ENTRYPOINT ["python3", "-m", "ndai.enclave.app"]
         for cf in configs:
             src = f"configs{cf.path}"
             lines.append(f"COPY {src} {cf.path}")
+        return "\n".join(lines)
+
+    def _render_build_steps(self, steps: list[str]) -> str:
+        if not steps:
+            return "# No custom build steps"
+        lines = []
+        for step in steps:
+            lines.append(f"RUN {step}")
         return "\n".join(lines)
 
     def _render_service_setup(self, services: list[ServiceSpec]) -> str:

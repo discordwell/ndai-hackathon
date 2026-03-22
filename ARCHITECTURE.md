@@ -280,3 +280,32 @@ Browser ↔ SSE (per-player filtered) + REST → FastAPI → Enclave (poker engi
 - **Shuffle fairness**: CSPRNG seed → deterministic shuffle. `sha256(seed)` published post-hand for verification.
 - **Settlement**: On-chain zero-sum enforcement. Sequential hand numbering prevents replay.
 - **Card filtering**: Parent receives `player_hands` dict from enclave, distributes each player's cards only to their SSE stream.
+
+## CVE-2024-3094 Demo (Hackathon PoC)
+
+End-to-end demonstration of the 0day marketplace using the XZ Utils backdoor as showcase.
+
+### Components
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| Backdoor reproduction | `demo/xz_backdoor/` | Simplified faithful reproduction of CVE-2024-3094 attack pattern |
+| Target spec | `demo/target_spec.py` | TargetSpec definition for enclave verification |
+| Seed data | `demo/seed_data.py` | Seeds marketplace with CVE-2024-3094 metadata |
+| Demo session | `ndai/enclave/vuln_demo_session.py` | Combined verify → negotiate → seal pipeline |
+| Demo API | `ndai/api/routers/vuln_demo.py` | SSE-streaming demo endpoints |
+| Demo frontend | `frontend/src/pages/vuln/VulnDemoPage.tsx` | Full pipeline visualization |
+| Demo script | `scripts/demo_xz_backdoor.py` | Terminal-based presenter script |
+| Health check | `demo/health_check.py` | Pre-demo dependency checker |
+
+### Demo Flow
+
+1. Seller submits CVE-2024-3094 vulnerability (CVSS 10.0, pre-auth RCE)
+2. Buyer browses anonymized marketplace listing
+3. Buyer proposes deal with budget cap
+4. TEE builds target (debian:12 + backdoored liblzma + sshd)
+5. Capability oracles verify ACE via Ed448-signed SSH payload
+6. AI agents negotiate price via bilateral Nash bargaining
+7. VulnEscrow deployed on Base Sepolia (90/10 split)
+8. Sealed delivery: ECIES re-encryption, zero-knowledge transfer
+9. Buyer downloads and decrypts exploit locally

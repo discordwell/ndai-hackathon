@@ -2,6 +2,16 @@
 
 ## Session Summaries
 
+### 2026-03-22T23:00Z — CVE-2024-3094 Demo: Full Marketplace Lifecycle
+- Built end-to-end hackathon PoC using XZ Utils backdoor (CVSS 10.0, March 2024) as showcase
+- **Backdoor reproduction** (`demo/xz_backdoor/`): Faithful reproduction of attack pattern — liblzma LD_PRELOAD hook → RSA_public_decrypt interception → Ed448-signed command execution. Uses known test keypair, omits stealth obfuscation. Includes: backdoor_hook.c (~200 LOC), trigger_service.c, poc_trigger.py, Dockerfile.target, Ed448 key generation.
+- **TargetSpec extension**: Added `build_steps` field to TargetSpec model for compile-from-source support. Security-validated (whitelisted commands, blocked network/shell injection). Renders as `RUN` commands in generated Dockerfile.
+- **Combined demo session** (`ndai/enclave/vuln_demo_session.py`): Orchestrates verify → negotiate → seal pipeline with progress callbacks. Demo API router with SSE streaming at `/api/v1/vuln-demo/`.
+- **Smart contract client alignment**: Fixed `vuln_escrow_client.py` to match actual `VulnEscrow.sol` interface (`submitVerification` not `submitOutcome`, `price` not `reservePrice`/`budgetCap`). Fixed `VulnEscrowState.Verified` (was `Evaluated`).
+- **Demo frontend**: `VulnDemoPage.tsx` — dark-themed pipeline visualization with phase status indicators, real-time SSE event log, and result display.
+- **Demo script**: `scripts/demo_xz_backdoor.py` — terminal presenter script with `--speed fast/live` modes, color output, simulated verification, and API-driven negotiation.
+- **33 new tests** (build_steps validation, XZ target spec, demo session), 688 total passing.
+
 ### 2026-03-22T20:00Z — Sealed Exploit Delivery: Zero-Knowledge Transfer
 - Built cryptographic delivery protocol: exploit plaintext ONLY exists inside Nitro Enclave
 - **Protocol**: Seller encrypts exploit to enclave (ECIES), enclave re-encrypts with fresh K_d for buyer, encrypts K_d to buyer's P-384 public key (ECIES). Platform stores only ciphertext.
