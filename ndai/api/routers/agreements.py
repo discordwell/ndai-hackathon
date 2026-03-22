@@ -129,3 +129,52 @@ async def confirm_delegation(
     agreement = await update_agreement(db, agreement, status="confirmed")
     await log_event(db, agreement.id, "delegation_confirmed", uuid.UUID(user_id))
     return _agreement_response(agreement)
+
+
+@router.get("/{agreement_id}/escrow-state")
+async def get_escrow_state(
+    agreement_id: str,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get on-chain escrow state for an agreement."""
+    from ndai.config import settings
+
+    agreement = await get_agreement(db, uuid.UUID(agreement_id))
+    if not agreement:
+        raise HTTPException(status_code=404, detail="Agreement not found")
+    if user_id not in (str(agreement.buyer_id), str(agreement.seller_id)):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if not agreement.escrow_address:
+        raise HTTPException(status_code=404, detail="No escrow for this agreement")
+
+    if not settings.blockchain_enabled or not settings.base_sepolia_rpc_url:
+        return {
+            "escrow_address": agreement.escrow_address,
+            "blockchain_unavailable": True,
+        }
+
+    try:
+        from ndai.blockchain.escrow_client import EscrowClient
+        client = EscrowClient(
+            rpc_url=settings.base_sepolia_rpc_url,
+            factory_address=settings.escrow_factory_address,
+            chain_id=settings.chain_id,
+        )
+        state = await client.get_deal_state(agreement.escrow_address)
+        return {
+            "escrow_address": agreement.escrow_address,
+            "state": state.state.name,
+            "balance_wei": state.balance_wei,
+            "reserve_price_wei": state.reserve_price_wei,
+            "budget_cap_wei": state.budget_cap_wei,
+            "final_price_wei": state.final_price_wei,
+            "attestation_hash": "0x" + state.attestation_hash.hex(),
+            "deadline": state.deadline,
+        }
+    except Exception as e:
+        return {
+            "escrow_address": agreement.escrow_address,
+            "blockchain_unavailable": True,
+            "error": str(e),
+        }
