@@ -11,8 +11,9 @@ import * as ed from "@noble/ed25519";
 
 const SALT = "NDAI_ZK_V1";
 
-// scrypt params — N=2^17 (128 MB), r=8, p=1 — memory-hard KDF
-const SCRYPT_N = 131072;
+// scrypt params — N=2^15 (32 MB), r=8, p=1 — memory-hard KDF
+// Balances security with browser performance (~1-2s)
+const SCRYPT_N = 32768;
 const SCRYPT_R = 8;
 const SCRYPT_P = 1;
 const KEY_LEN = 32;
