@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     vuln_overlay_max_size_mb: int = 500
     vuln_verify_enclave_memory_mib: int = 2048
 
+    # PCR0 Registry
+    pcr0_registry_address: str = ""
+    pcr0_registry_chain: str = ""
+    deployer_address: str = ""
+
     # Known Targets & Verification Proposals
     known_targets_enabled: bool = True
     verification_deposit_address: str = ""  # VerificationDeposit.sol contract address
