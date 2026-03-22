@@ -11,12 +11,30 @@ export interface KnownTarget {
   has_prebuilt: boolean;
 }
 
+export interface PackageSpec {
+  name: string;
+  version: string;
+}
+
+export interface ServiceSpec {
+  name: string;
+  start_command: string;
+  health_check: string;
+  timeout_sec: number;
+}
+
 export interface KnownTargetDetail extends KnownTarget {
   description: string;
   poc_instructions: string;
   build_status: string;
   supported_capabilities: string[];
   max_poc_size_kb: number;
+  base_image: string | null;
+  service_user: string;
+  packages_json: PackageSpec[] | null;
+  services_json: ServiceSpec[] | null;
+  build_steps_json: string[] | null;
+  config_files_json: { path: string; content?: string; mode?: string }[] | null;
 }
 
 // Proposals

@@ -90,6 +90,96 @@ export function TargetDetailPage({ targetId }: Props) {
         </div>
       </div>
 
+      {/* Build Spec — exact environment the PoC runs against */}
+      <div className="border-3 border-zk-border bg-white p-6 mb-4">
+        <h2 className="text-sm font-mono font-bold text-zk-text uppercase mb-1 flex items-center gap-3">
+          Build Spec
+          <span className="font-mono text-label px-2 py-0.5 border-2 border-zk-accent text-zk-accent">EXACT ENVIRONMENT</span>
+        </h2>
+        <p className="text-xs text-zk-muted font-mono mb-4">
+          This is the precise system your PoC will execute against inside the enclave.
+        </p>
+
+        <div className="space-y-3">
+          {/* Base image */}
+          {target.base_image && (
+            <div className="flex items-baseline gap-2">
+              <span className="text-[10px] text-zk-dim font-mono uppercase w-24 shrink-0">BASE</span>
+              <code className="text-xs text-zk-text font-mono bg-zk-bg px-2 py-0.5 border border-zk-border">{target.base_image}</code>
+            </div>
+          )}
+
+          {/* Service user */}
+          <div className="flex items-baseline gap-2">
+            <span className="text-[10px] text-zk-dim font-mono uppercase w-24 shrink-0">POC RUNS AS</span>
+            <code className="text-xs text-zk-text font-mono bg-zk-bg px-2 py-0.5 border border-zk-border">{target.service_user}</code>
+          </div>
+
+          {/* Packages */}
+          {target.packages_json && target.packages_json.length > 0 && (
+            <div>
+              <span className="text-[10px] text-zk-dim font-mono uppercase block mb-1">PACKAGES</span>
+              <div className="bg-zk-bg border-2 border-zk-border p-3 space-y-1">
+                {target.packages_json.map((pkg, i) => (
+                  <div key={i} className="flex items-baseline gap-2 text-xs font-mono">
+                    <span className="text-zk-text font-bold">{pkg.name}</span>
+                    <span className="text-zk-muted">=</span>
+                    <span className="text-zk-accent">{pkg.version}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Services */}
+          {target.services_json && target.services_json.length > 0 && (
+            <div>
+              <span className="text-[10px] text-zk-dim font-mono uppercase block mb-1">SERVICES</span>
+              <div className="bg-zk-bg border-2 border-zk-border p-3 space-y-3">
+                {target.services_json.map((svc, i) => (
+                  <div key={i} className="space-y-1">
+                    <div className="text-xs font-mono font-bold text-zk-text">{svc.name}</div>
+                    <div className="text-[11px] font-mono text-zk-muted pl-3">
+                      <div><span className="text-zk-dim">$</span> {svc.start_command}</div>
+                      <div className="text-zk-dim">health: {svc.health_check}</div>
+                      <div className="text-zk-dim">timeout: {svc.timeout_sec}s</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Build steps */}
+          {target.build_steps_json && target.build_steps_json.length > 0 && (
+            <div>
+              <span className="text-[10px] text-zk-dim font-mono uppercase block mb-1">BUILD STEPS</span>
+              <div className="bg-zk-bg border-2 border-zk-border p-3">
+                {target.build_steps_json.map((step, i) => (
+                  <div key={i} className="text-[11px] font-mono text-zk-text">
+                    <span className="text-zk-dim">RUN</span> {step}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Config files */}
+          {target.config_files_json && target.config_files_json.length > 0 && (
+            <div>
+              <span className="text-[10px] text-zk-dim font-mono uppercase block mb-1">CONFIG FILES</span>
+              <div className="bg-zk-bg border-2 border-zk-border p-3 space-y-1">
+                {target.config_files_json.map((f, i) => (
+                  <div key={i} className="text-[11px] font-mono text-zk-text">
+                    <span className="text-zk-dim">COPY</span> {f.path} <span className="text-zk-dim">{f.mode ? `(${f.mode})` : ""}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* PoC Instructions */}
       {target.poc_instructions && (
         <div className="border-3 border-zk-border bg-white p-6 mb-4">

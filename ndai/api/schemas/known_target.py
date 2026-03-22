@@ -36,9 +36,13 @@ class KnownTargetResponse(BaseModel):
 
 
 class KnownTargetDetailResponse(KnownTargetResponse):
-    """Extended detail including build info and platform config."""
+    """Extended detail including build spec and platform config."""
     base_image: str | None = None
     service_user: str = "www-data"
+    packages_json: list | None = None  # [{name, version}, ...]
+    services_json: list | None = None  # [{name, start_command, health_check, timeout_sec}, ...]
+    build_steps_json: list | None = None  # ["RUN ...", ...]
+    config_files_json: list | None = None  # [{path, content, mode}, ...]
     platform_config_json: dict | None = None
     build_status: str | None = None  # latest build status
     build_version: str | None = None  # latest build version
