@@ -93,11 +93,12 @@ def upgrade() -> None:
     op.create_index("ix_verification_proposals_seller_pubkey", "verification_proposals", ["seller_pubkey"])
     op.create_index("ix_verification_proposals_target_id", "verification_proposals", ["target_id"])
 
-    # ── Badge fields on vuln_identities ──
-    op.add_column("vuln_identities", sa.Column("has_badge", sa.Boolean(), server_default="false"))
-    op.add_column("vuln_identities", sa.Column("badge_type", sa.String(20)))
-    op.add_column("vuln_identities", sa.Column("badge_tx_hash", sa.String(66)))
-    op.add_column("vuln_identities", sa.Column("badge_awarded_at", sa.DateTime(timezone=True)))
+    # ── Badge fields on vuln_identities (idempotent — columns may already exist from prior manual run) ──
+    conn = op.get_bind()
+    conn.execute(sa.text("ALTER TABLE vuln_identities ADD COLUMN IF NOT EXISTS has_badge BOOLEAN DEFAULT false"))
+    conn.execute(sa.text("ALTER TABLE vuln_identities ADD COLUMN IF NOT EXISTS badge_type VARCHAR(20)"))
+    conn.execute(sa.text("ALTER TABLE vuln_identities ADD COLUMN IF NOT EXISTS badge_tx_hash VARCHAR(66)"))
+    conn.execute(sa.text("ALTER TABLE vuln_identities ADD COLUMN IF NOT EXISTS badge_awarded_at TIMESTAMPTZ"))
 
     # ── Seed initial targets ──
     known_targets = sa.table(
