@@ -59,7 +59,7 @@ export function ProposalPage({ targetId }: Props) {
       const proposal = await createProposal({
         target_id: targetId,
         poc_script: pocScript,
-        script_type: scriptType,
+        poc_script_type: scriptType,
         claimed_capability: capability,
         reliability_runs: reliabilityRuns,
         asking_price_eth: parseFloat(askingPrice) || 0,
