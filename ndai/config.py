@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     # Vulnerability marketplace
     vuln_marketplace_enabled: bool = True
     vuln_escrow_factory_address: str = ""
+    platform_fee_address: str = ""
+
+    # Frontend
+    frontend_dir: str = ""  # Override FRONTEND_DIST path (for zdayzk.com deployment)
+
+    # Privacy / Tor
+    privacy_mode: bool = False
+    onion_address: str = ""
 
     # Vulnerability verification (Phase 3)
     vuln_verify_enabled: bool = True
