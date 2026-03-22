@@ -443,6 +443,7 @@ def _handle_vuln_verify(request: dict[str, Any]) -> dict[str, Any]:
         )
         from ndai.enclave.vuln_verify.overlay_handler import OverlayHandler
         from ndai.enclave.vuln_verify.protocol import VulnVerificationProtocol
+        from ndai.enclave.vuln_verify.security import validate_target_spec
 
         data = request.get("data", request)
         spec_data = data.get("target_spec", {})
@@ -456,6 +457,11 @@ def _handle_vuln_verify(request: dict[str, Any]) -> dict[str, Any]:
             poc=PoCSpec(**spec_data.get("poc", {"script_type": "bash", "script_content": "true"})),
             expected_outcome=ExpectedOutcome(**spec_data.get("expected_outcome", {})),
         )
+
+        # Validate inside the enclave (defense in depth — parent already validated)
+        errors = validate_target_spec(spec)
+        if errors:
+            return {"status": "error", "error": f"Target spec validation failed: {len(errors)} error(s)"}
 
         overlay = _state.pending_overlay
         overlay_handler = OverlayHandler(keypair=_state.keypair) if overlay else None
@@ -514,7 +520,7 @@ def _handle_deliver_overlay(request: dict[str, Any]) -> dict[str, Any]:
 
     except Exception as exc:
         logger.error("Overlay delivery failed: %s", exc)
-        return {"status": "error", "error": f"Overlay delivery failed: {exc}"}
+        return {"status": "error", "error": "Overlay delivery failed. Check enclave logs."}
 
 
 def _handle_attestation(request: dict[str, Any]) -> dict[str, Any]:

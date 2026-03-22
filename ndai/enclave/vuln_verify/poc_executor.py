@@ -175,8 +175,24 @@ class PoCExecutor:
         return has_any
 
     def _set_resource_limits(self) -> None:
-        """Set resource limits for the PoC subprocess (called via preexec_fn)."""
+        """Set resource limits and drop privileges for the PoC subprocess.
+
+        Called via preexec_fn — runs in the child process before exec.
+        Drops to the 'poc' user so the PoC cannot access enclave secrets.
+        """
+        import pwd
+
         limits = self._limits
+
+        # Drop privileges to 'poc' user FIRST (before setrlimit,
+        # since we need root to call setuid)
+        try:
+            poc_user = pwd.getpwnam("poc")
+            os.setgid(poc_user.pw_gid)
+            os.setuid(poc_user.pw_uid)
+        except (KeyError, PermissionError):
+            # 'poc' user doesn't exist (dev/test) or not root — skip
+            logger.warning("Cannot drop to 'poc' user — running as current user")
 
         # CPU time
         resource.setrlimit(resource.RLIMIT_CPU, (limits.max_cpu_sec, limits.max_cpu_sec))

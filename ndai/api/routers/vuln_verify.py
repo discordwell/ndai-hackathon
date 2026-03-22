@@ -268,7 +268,7 @@ async def start_verification(
         .where(TargetSpecRecord.vulnerability_id == agreement.vulnerability_id)
         .order_by(TargetSpecRecord.created_at.desc())
     )
-    spec_record = result.scalar_first()
+    spec_record = result.scalars().first()
     if not spec_record:
         raise HTTPException(status_code=404, detail="No target spec found for this vulnerability")
 

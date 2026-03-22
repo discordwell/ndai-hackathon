@@ -190,14 +190,8 @@ class VulnVerifyOrchestrator:
                 if key_resp.get("status") != "ok":
                     raise VerificationOrchestrationError("Key delivery failed")
 
-            # Step 4: Send verification request
-            spec_dict = self._serialize_target_spec(config.target_spec)
-            await self._provider.send_message(identity.enclave_id, {
-                "action": "vuln_verify",
-                "data": {"target_spec": spec_dict},
-            })
-
-            # Step 5: Optionally deliver buyer overlay
+            # Step 4: Deliver buyer overlay BEFORE verification (enclave reads
+            # pending_overlay when vuln_verify runs, so it must already be present)
             if config.buyer_overlay_encrypted:
                 import base64
                 await self._provider.send_message(identity.enclave_id, {
@@ -209,6 +203,13 @@ class VulnVerifyOrchestrator:
                     raise VerificationOrchestrationError(
                         f"Overlay delivery failed: {overlay_resp.get('error', 'unknown')}"
                     )
+
+            # Step 5: Send verification request (overlay already in enclave state)
+            spec_dict = self._serialize_target_spec(config.target_spec)
+            await self._provider.send_message(identity.enclave_id, {
+                "action": "vuln_verify",
+                "data": {"target_spec": spec_dict},
+            })
 
             # Step 6: Receive verification result
             result_resp = await self._provider.receive_message(identity.enclave_id)
