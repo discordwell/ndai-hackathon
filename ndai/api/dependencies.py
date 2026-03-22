@@ -17,6 +17,31 @@ def create_access_token(subject: str) -> str:
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 
+def create_zk_token(pubkey: str) -> str:
+    """Create JWT for ZK-authenticated identity."""
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
+    payload = {"sub": pubkey, "exp": expire, "auth_type": "zk"}
+    return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+
+
+async def get_zk_identity(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> str:
+    """Extract and validate ZK identity from JWT. Returns hex public key."""
+    try:
+        payload = jwt.decode(
+            credentials.credentials, settings.secret_key, algorithms=[settings.algorithm]
+        )
+        if payload.get("auth_type") != "zk":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not a ZK token")
+        pubkey: str | None = payload.get("sub")
+        if pubkey is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+        return pubkey
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> str:

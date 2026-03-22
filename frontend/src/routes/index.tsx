@@ -34,6 +34,15 @@ import { VulnSubmitPage } from "../pages/vuln/VulnSubmitPage";
 import { VulnListPage } from "../pages/vuln/VulnListPage";
 import { VulnDealPage } from "../pages/vuln/VulnDealPage";
 import { VulnDemoPage } from "../pages/vuln/VulnDemoPage";
+import { ZKLayout } from "../layouts/ZKLayout";
+import { ZKAuthPage } from "../pages/zk/ZKAuthPage";
+import { ZKMarketplacePage } from "../pages/zk/ZKMarketplacePage";
+import { ZKSubmitPage } from "../pages/zk/ZKSubmitPage";
+import { ZKBountyCreatePage } from "../pages/zk/ZKBountyCreatePage";
+import { ZKMyListingsPage } from "../pages/zk/ZKMyListingsPage";
+import { ZKDealPage } from "../pages/zk/ZKDealPage";
+import { ZKDealsListPage } from "../pages/zk/ZKDealsListPage";
+import { ZKIdentityPage } from "../pages/zk/ZKIdentityPage";
 
 function useHash(): string {
   const [hash, setHash] = useState(window.location.hash || "#/login");
@@ -155,6 +164,17 @@ export function Router() {
   if (path === "/poker/history") return <PokerLayout><PokerHistoryPage /></PokerLayout>;
   const pokerTableMatch = path.match(/^\/poker\/table\/([^/]+)$/);
   if (pokerTableMatch) return <PokerTableLayout><PokerTablePage tableId={pokerTableMatch[1]} /></PokerTableLayout>;
+
+  // ZK 0day marketplace routes (separate auth system)
+  if (path === "/zk/auth") return <ZKAuthPage />;
+  if (path === "/zk") return <ZKLayout><ZKMarketplacePage /></ZKLayout>;
+  if (path === "/zk/submit") return <ZKLayout><ZKSubmitPage /></ZKLayout>;
+  if (path === "/zk/bounty/new") return <ZKLayout><ZKBountyCreatePage /></ZKLayout>;
+  if (path === "/zk/mine") return <ZKLayout><ZKMyListingsPage /></ZKLayout>;
+  if (path === "/zk/deals") return <ZKLayout><ZKDealsListPage /></ZKLayout>;
+  if (path === "/zk/identity") return <ZKLayout><ZKIdentityPage /></ZKLayout>;
+  const zkDealMatch = path.match(/^\/zk\/deals\/([^/]+)$/);
+  if (zkDealMatch) return <ZKLayout><ZKDealPage dealId={zkDealMatch[1]} /></ZKLayout>;
 
   // Vuln marketplace routes
   if (path === "/vuln") return <VulnLayout><VulnMarketplacePage /></VulnLayout>;

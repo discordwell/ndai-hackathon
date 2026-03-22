@@ -11,6 +11,9 @@ from ndai.models.poker import PokerTable, PokerSeat, PokerHand, PokerHandAction
 from ndai.models.vulnerability import Vulnerability, VulnAgreement, VulnAgreementOutcome
 from ndai.models.vuln_verify import TargetSpecRecord, EIFManifestRecord, VerificationResultRecord
 from ndai.models.delivery import DeliveryRecord
+from ndai.models.zk_identity import VulnIdentity
+from ndai.models.zk_vulnerability import ZKVulnerability, ZKVulnAgreement, ZKVulnOutcome
+from ndai.models.bounty import Bounty
 
 __all__ = [
     "Base",
@@ -35,4 +38,9 @@ __all__ = [
     "EIFManifestRecord",
     "VerificationResultRecord",
     "DeliveryRecord",
+    "VulnIdentity",
+    "ZKVulnerability",
+    "ZKVulnAgreement",
+    "ZKVulnOutcome",
+    "Bounty",
 ]

@@ -6,6 +6,7 @@ const FEATURES = [
   { label: "Props", href: "#/props", prefixes: ["#/props"] },
   { label: "Poker", href: "#/poker", prefixes: ["#/poker"] },
   { label: "Zero-Day Market", href: "#/vuln", prefixes: ["#/vuln"] },
+  { label: "0day (ZK)", href: "#/zk", prefixes: ["#/zk"] },
 ];
 
 export function FeatureNav() {
