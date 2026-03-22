@@ -6,20 +6,26 @@ interface Props {
 }
 
 export default function CommunityCards({ cards }: Props) {
-  const slots = Array.from({ length: 5 }, (_, i) => cards[i] ?? undefined);
-
   return (
-    <div className="flex gap-2 justify-center">
-      {slots.map((card, i) =>
-        card ? (
-          <PlayingCard key={i} card={card} size="md" />
+    <div className="flex gap-2.5 justify-center">
+      {Array.from({ length: 5 }, (_, i) => {
+        const card = cards[i];
+        return card ? (
+          <div
+            key={i}
+            className="animate-[fadeSlideUp_0.3s_ease-out]"
+            style={{ animationDelay: `${i * 80}ms`, animationFillMode: "backwards" }}
+          >
+            <PlayingCard card={card} size="md" />
+          </div>
         ) : (
           <div
             key={i}
-            className="w-14 h-[78px] rounded-md border-2 border-dashed border-gray-600 bg-gray-800/30"
+            className="rounded-lg border border-white/5 bg-white/[0.02]"
+            style={{ width: 58, height: 82 }}
           />
-        )
-      )}
+        );
+      })}
     </div>
   );
 }

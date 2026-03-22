@@ -8,27 +8,49 @@ interface Props {
 }
 
 function formatAmount(amount: number): string {
-  // If amount is large enough to be wei, convert to ETH
   if (amount >= 1e15) {
     const eth = amount / 1e18;
-    return eth.toFixed(6).replace(/\.?0+$/, "") + " ETH";
+    return eth.toFixed(4).replace(/\.?0+$/, "") + " ETH";
   }
+  if (amount >= 1_000_000) return (amount / 1_000_000).toFixed(1) + "M";
+  if (amount >= 10_000) return (amount / 1_000).toFixed(1) + "K";
   return amount.toLocaleString();
 }
 
+function ChipStack() {
+  return (
+    <div className="flex flex-col items-center -space-y-1.5">
+      <div className="w-5 h-2.5 rounded-full bg-gradient-to-r from-red-500 to-red-600 border border-red-400/50 shadow-sm" />
+      <div className="w-5 h-2.5 rounded-full bg-gradient-to-r from-blue-500 to-blue-600 border border-blue-400/50 shadow-sm" />
+      <div className="w-5 h-2.5 rounded-full bg-gradient-to-r from-green-500 to-green-600 border border-green-400/50 shadow-sm" />
+    </div>
+  );
+}
+
 export default function PotDisplay({ pots }: Props) {
-  if (pots.length === 0) return null;
+  const total = pots.reduce((sum, p) => sum + p.amount, 0);
+  if (total === 0) return null;
 
   return (
-    <div className="flex flex-col items-center gap-1">
-      {pots.map((pot, i) => (
-        <div
-          key={i}
-          className="bg-black/60 rounded-full px-4 py-1 text-white text-sm font-semibold"
-        >
-          {i > 0 && <span className="text-gray-400 text-xs mr-1">Side Pot:</span>}
-          {i === 0 && pots.length > 1 && <span className="text-gray-400 text-xs mr-1">Main:</span>}
-          {formatAmount(pot.amount)}
+    <div className="flex flex-col items-center gap-1.5">
+      {/* Main pot */}
+      <div className="flex items-center gap-2.5 bg-black/50 backdrop-blur-sm rounded-full px-5 py-2 border border-white/10 shadow-lg">
+        <ChipStack />
+        <div className="flex flex-col">
+          {pots.length > 1 && <span className="text-gray-500 text-[9px] uppercase tracking-wider">Main Pot</span>}
+          <span className="text-white text-base font-bold tabular-nums tracking-tight">
+            {formatAmount(pots[0]?.amount ?? total)}
+          </span>
+        </div>
+      </div>
+
+      {/* Side pots */}
+      {pots.slice(1).map((pot, i) => (
+        <div key={i} className="flex items-center gap-2 bg-black/40 backdrop-blur-sm rounded-full px-3.5 py-1 border border-white/5">
+          <div className="w-3 h-3 rounded-full bg-gradient-to-b from-gold-400 to-gold-600 shadow-sm" />
+          <span className="text-gray-400 text-xs font-medium tabular-nums">
+            Side: {formatAmount(pot.amount)}
+          </span>
         </div>
       ))}
     </div>
