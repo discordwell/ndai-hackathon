@@ -42,7 +42,7 @@ export default function PlayingCard({ card, size = "md" }: Props) {
 
   return (
     <div
-      className={`${s.w} ${s.h} rounded-md bg-white border border-gray-300 flex flex-col items-start p-1 shadow-md ${color}`}
+      className={`${s.w} ${s.h} rounded-md bg-white border border-gray-300 flex flex-col items-start p-1 shadow-lg ${color} transition-transform duration-300 hover:scale-105`}
     >
       <span className={`${s.text} font-bold leading-none`}>{rank}</span>
       <span className={`${s.suit} leading-none`}>{suitSymbol}</span>
