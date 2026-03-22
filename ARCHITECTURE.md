@@ -24,7 +24,17 @@ Frontend (React) → FastAPI Backend → Parent EC2 Instance → Nitro Enclave
 **Inside enclave** (secure): AI agents, negotiation engine, invention plaintext, Shamir reconstruction.
 **Outside enclave** (untrusted): API, database, frontend, enclave orchestrator.
 
-In Nitro mode, the enclave performs TLS directly through a TCP tunnel — the parent only sees encrypted ciphertext. The API key is delivered via ECIES encryption to the enclave's attestation-bound ephemeral public key. In simulated mode, the parent proxies Claude API calls via vsock (parent sees plaintext; no security guarantees).
+### TEE Backend Portability
+
+TrustKit is TEE-agnostic via a provider abstraction (`ndai/tee/provider.py`). All application logic — poker engine, negotiation agents, credential proxy — runs unchanged on any backend:
+
+| Backend | Hardware | Attestation | Config |
+|---------|----------|-------------|--------|
+| **Nitro** | AWS Nitro Enclaves | COSE Sign1 via `/dev/nsm` | `TEE_MODE=nitro` |
+| **dstack** | Intel TDX (Confidential VMs) | TDX quotes via dstack SDK | `TEE_MODE=dstack` |
+| **Simulated** | None (dev mode) | Self-signed stubs | `TEE_MODE=simulated` |
+
+In Nitro mode, the enclave performs TLS directly through a TCP tunnel — the parent only sees encrypted ciphertext. The API key is delivered via ECIES encryption to the enclave's attestation-bound ephemeral public key. In dstack mode, the entire container runs inside hardware-encrypted memory (Intel TDX), with keys derived from the dstack KMS. In simulated mode, the parent proxies Claude API calls via vsock (parent sees plaintext; no security guarantees).
 
 ## Core Mechanism
 

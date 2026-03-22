@@ -13,6 +13,7 @@ from typing import Any
 
 class TEEType(Enum):
     NITRO = "aws_nitro"
+    DSTACK = "dstack"
     SIMULATED = "simulated"
 
 

@@ -43,6 +43,9 @@ def _get_provider():
     if settings.tee_mode == "nitro":
         from ndai.tee.nitro_provider import NitroEnclaveProvider
         return NitroEnclaveProvider()
+    elif settings.tee_mode == "dstack":
+        from ndai.tee.dstack_provider import DstackProvider
+        return DstackProvider()
     else:
         from ndai.tee.simulated_provider import SimulatedTEEProvider
         return SimulatedTEEProvider()

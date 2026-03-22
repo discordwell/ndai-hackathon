@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o"
 
     # TEE
-    tee_mode: str = "simulated"  # "simulated" or "nitro"
+    tee_mode: str = "simulated"  # "simulated", "nitro", or "dstack"
     enclave_cpu_count: int = 2
     enclave_memory_mib: int = 1600
     enclave_eif_path: str = "ndai_enclave.eif"
@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     poker_action_timeout_sec: int = 30
     poker_table_factory_address: str = ""
     poker_max_tables: int = 10
+
+    # Vulnerability marketplace
+    vuln_marketplace_enabled: bool = True
+    vuln_escrow_factory_address: str = ""
 
 
 settings = Settings()

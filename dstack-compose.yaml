@@ -1,0 +1,41 @@
+# dstack deployment — runs TrustKit inside a Confidential VM (Intel TDX)
+# Deploy via: dstack deploy dstack-compose.yaml
+# Or via Phala Cloud: upload this file at cloud.phala.network
+#
+# The entire container runs inside hardware-encrypted memory.
+# Attestation uses TDX quotes via the dstack SDK.
+# Keys are derived deterministically from the dstack KMS.
+
+services:
+  trustkit:
+    image: trustkit:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8100:8100"
+    environment:
+      - TEE_MODE=dstack
+      - DATABASE_URL=postgresql+asyncpg://ndai:ndai@db:5432/ndai
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - POKER_ENABLED=true
+      - POKER_ACTION_TIMEOUT_SEC=120
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ndai
+      POSTGRES_PASSWORD: ndai
+      POSTGRES_DB: ndai
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+
+volumes:
+  pgdata:
