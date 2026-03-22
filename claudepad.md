@@ -2,6 +2,16 @@
 
 ## Session Summaries
 
+### 2026-03-22T15:00Z — Zero-Day Vulnerability Marketplace
+- Built new "vuln" feature module alongside existing invention marketplace, reusing TEE infrastructure
+- **Shelf-life decay engine** (`shelf_life.py`): V(t) = V_0 * exp(-λt) * (1-P_patch) * exclusivity_premium, with per-category decay rates (browser=0.015, embedded=0.001, etc.)
+- **Graduated disclosure agents**: VulnSellerAgent picks disclosure level 0-3 (class → component → triggers → PoC summary); VulnBuyerAgent does CVSS triage. Hard constraints enforced in code, not LLM.
+- **VulnNegotiationSession**: Same 4-phase flow as invention negotiation, adapted with shelf-life V(t) replacing static Φ
+- **Smart contracts**: VulnEscrow.sol with decay-adjusted pricing (`decayAdjustedPrice = finalPrice * decayNumerator / 1e18`), patch oracle (`reportPatch()` → full buyer refund), and embargo tracking. 23 Forge tests pass (including 256 fuzz runs).
+- **Full stack**: DB models + migration, API endpoints (CRUD + SSE streaming), React frontend (marketplace, submit form, deal page with live progress), blockchain client
+- **Code review fixes**: Added auth to listings endpoint (zero-day metadata is sensitive), blocked self-dealing, fixed counter-offer handling in multi-round negotiation
+- 46 new Python tests + 23 Solidity tests, all passing. No regressions in existing tests.
+
 ### 2026-03-16T10:00Z — Initial MVP scaffolding (Phases 1-3)
 - Read and analyzed arxiv:2502.07924 (NDAI Agreements paper)
 - Planned full production architecture with user (AWS Nitro, Python/FastAPI, Claude agents, Shamir SSS)

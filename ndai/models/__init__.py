@@ -8,6 +8,7 @@ from ndai.models.audit import AuditLog
 from ndai.models.secret import Secret, SecretAccessLog
 from ndai.models.transcript import MeetingTranscript, TranscriptSummary
 from ndai.models.poker import PokerTable, PokerSeat, PokerHand, PokerHandAction
+from ndai.models.vulnerability import Vulnerability, VulnAgreement, VulnAgreementOutcome
 
 __all__ = [
     "Base",
@@ -25,4 +26,7 @@ __all__ = [
     "PokerSeat",
     "PokerHand",
     "PokerHandAction",
+    "Vulnerability",
+    "VulnAgreement",
+    "VulnAgreementOutcome",
 ]

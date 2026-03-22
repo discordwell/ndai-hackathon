@@ -28,6 +28,11 @@ import { PokerTableLayout } from "../layouts/PokerTableLayout";
 import { PokerLobbyPage } from "../pages/poker/PokerLobbyPage";
 import { PokerTablePage } from "../pages/poker/PokerTablePage";
 import { PokerHistoryPage } from "../pages/poker/PokerHistoryPage";
+import { VulnLayout } from "../layouts/VulnLayout";
+import { VulnMarketplacePage } from "../pages/vuln/VulnMarketplacePage";
+import { VulnSubmitPage } from "../pages/vuln/VulnSubmitPage";
+import { VulnListPage } from "../pages/vuln/VulnListPage";
+import { VulnDealPage } from "../pages/vuln/VulnDealPage";
 
 function useHash(): string {
   const [hash, setHash] = useState(window.location.hash || "#/login");
@@ -149,6 +154,13 @@ export function Router() {
   if (path === "/poker/history") return <PokerLayout><PokerHistoryPage /></PokerLayout>;
   const pokerTableMatch = path.match(/^\/poker\/table\/([^/]+)$/);
   if (pokerTableMatch) return <PokerTableLayout><PokerTablePage tableId={pokerTableMatch[1]} /></PokerTableLayout>;
+
+  // Vuln marketplace routes
+  if (path === "/vuln") return <VulnLayout><VulnMarketplacePage /></VulnLayout>;
+  if (path === "/vuln/submit") return <VulnLayout><VulnSubmitPage /></VulnLayout>;
+  if (path === "/vuln/mine") return <VulnLayout><VulnListPage /></VulnLayout>;
+  const vulnDealMatch = path.match(/^\/vuln\/deals\/([^/]+)$/);
+  if (vulnDealMatch) return <VulnLayout><VulnDealPage dealId={vulnDealMatch[1]} /></VulnLayout>;
 
   // Fallback — redirect to login
   if (!isAuthenticated) {

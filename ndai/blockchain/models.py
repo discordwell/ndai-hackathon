@@ -24,3 +24,33 @@ class DealState:
     deadline: int
     state: EscrowState
     balance_wei: int
+
+
+class VulnEscrowState(IntEnum):
+    Created = 0
+    Funded = 1
+    Evaluated = 2
+    Accepted = 3
+    Rejected = 4
+    Expired = 5
+    PatchRefunded = 6
+
+
+@dataclass
+class VulnDealState:
+    seller: str
+    buyer: str
+    operator: str
+    reserve_price_wei: int
+    budget_cap_wei: int
+    final_price_wei: int
+    decay_adjusted_price_wei: int
+    decay_numerator: int
+    attestation_hash: bytes
+    deadline: int
+    discovery_timestamp: int
+    embargo_end_timestamp: int
+    is_exclusive: bool
+    is_patched: bool
+    state: VulnEscrowState
+    balance_wei: int

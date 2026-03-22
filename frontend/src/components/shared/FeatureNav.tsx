@@ -5,6 +5,7 @@ const FEATURES = [
   { label: "Conditional Recall", href: "#/recall", prefixes: ["#/recall"] },
   { label: "Props", href: "#/props", prefixes: ["#/props"] },
   { label: "Poker", href: "#/poker", prefixes: ["#/poker"] },
+  { label: "Zero-Day Market", href: "#/vuln", prefixes: ["#/vuln"] },
 ];
 
 export function FeatureNav() {

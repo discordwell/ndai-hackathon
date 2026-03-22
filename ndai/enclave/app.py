@@ -329,6 +329,8 @@ def _handle_request(request: dict[str, Any]) -> dict[str, Any]:
         return _handle_deliver_key(request)
     elif action == "ping":
         return {"status": "ok", "action": "pong"}
+    elif action == "vuln_negotiate":
+        return _handle_vuln_negotiate(request)
     elif action and action.startswith("poker_"):
         from ndai.enclave.poker.actions import handle_poker_action
         return handle_poker_action(request, _state.poker_tables)
@@ -371,6 +373,61 @@ def _handle_negotiate(request: dict[str, Any]) -> dict[str, Any]:
         "status": "ok",
         "result": safe_dict,
     }
+
+
+def _handle_vuln_negotiate(request: dict[str, Any]) -> dict[str, Any]:
+    """Run a vulnerability marketplace negotiation and return the result."""
+    try:
+        from ndai.enclave.agents.base_agent import VulnerabilitySubmission
+        from ndai.enclave.vuln_session import VulnNegotiationSession, VulnSessionConfig
+
+        data = request.get("data", request)
+        vuln_data = data.get("vulnerability", {})
+
+        vuln = VulnerabilitySubmission(
+            target_software=vuln_data["target_software"],
+            target_version=vuln_data["target_version"],
+            vulnerability_class=vuln_data["vulnerability_class"],
+            impact_type=vuln_data["impact_type"],
+            affected_component=vuln_data.get("affected_component", ""),
+            cvss_self_assessed=float(vuln_data["cvss_self_assessed"]),
+            discovery_date=vuln_data["discovery_date"],
+            patch_status=vuln_data.get("patch_status", "unpatched"),
+            exclusivity=vuln_data.get("exclusivity", "exclusive"),
+            outside_option_value=float(vuln_data.get("outside_option_value", 0.3)),
+            max_disclosure_level=int(vuln_data.get("max_disclosure_level", 3)),
+            embargo_days=int(vuln_data.get("embargo_days", 90)),
+            software_category=vuln_data.get("software_category", "default"),
+        )
+
+        config = VulnSessionConfig(
+            vulnerability=vuln,
+            budget_cap=float(data.get("budget_cap", 1.0)),
+            max_rounds=int(data.get("max_rounds", 5)),
+            llm_provider=data.get("llm_provider", "openai"),
+            api_key=_state.api_key or data.get("api_key", ""),
+            llm_model=data.get("llm_model", "gpt-4o"),
+            software_category=vuln_data.get("software_category", "default"),
+        )
+
+        session = VulnNegotiationSession(config)
+        result = session.run()
+
+        # Only safe fields leave the enclave
+        safe_result = {
+            "outcome": result.outcome.value,
+            "final_price": result.final_price,
+            "reason": result.reason,
+        }
+
+        return {"status": "ok", "result": safe_result}
+
+    except (KeyError, ValueError, TypeError) as exc:
+        logger.error("Invalid vuln negotiation request: %s", exc)
+        return {"status": "error", "error": f"Invalid request: {exc}"}
+    except Exception:
+        logger.exception("Vuln negotiation failed")
+        return {"status": "error", "error": "Negotiation failed. Check enclave logs."}
 
 
 def _handle_attestation(request: dict[str, Any]) -> dict[str, Any]:
