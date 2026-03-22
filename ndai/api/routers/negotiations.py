@@ -127,6 +127,7 @@ async def _run_negotiation_async(
             "final_price": result.final_price,
             "reason": result.reason or None,
             "negotiation_rounds": result.negotiation_rounds,
+            "omega_hat": result.omega_hat,
         }
         _statuses[agreement_id] = {
             "status": "completed",
@@ -278,7 +279,14 @@ async def get_outcome(
     # Check in-memory first
     mem_status = _statuses.get(agreement_id)
     if mem_status and mem_status.get("outcome"):
-        return NegotiationOutcomeResponse(**mem_status["outcome"])
+        mem_outcome = mem_status["outcome"]
+        return NegotiationOutcomeResponse(
+            outcome=mem_outcome.get("outcome"),
+            final_price=mem_outcome.get("final_price"),
+            reason=mem_outcome.get("reason"),
+            negotiation_rounds=mem_outcome.get("negotiation_rounds"),
+            omega_hat=mem_outcome.get("omega_hat"),
+        )
 
     # Fall back to DB
     outcome = await get_outcome_by_agreement(db, uuid.UUID(agreement_id))
@@ -288,6 +296,8 @@ async def get_outcome(
         outcome=outcome.outcome,
         final_price=outcome.final_price,
         reason=outcome.error_details,
+        negotiation_rounds=outcome.negotiation_rounds,
+        omega_hat=outcome.omega_hat,
     )
 
 

@@ -35,6 +35,8 @@ def _agreement_response(a) -> AgreementResponse:
         alpha_0=a.alpha_0,
         budget_cap=a.budget_cap,
         theta=a.theta,
+        escrow_address=a.escrow_address,
+        escrow_tx_hash=a.escrow_tx_hash,
     )
 
 

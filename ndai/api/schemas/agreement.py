@@ -22,6 +22,8 @@ class AgreementResponse(BaseModel):
     alpha_0: float | None
     budget_cap: float | None
     theta: float | None
+    escrow_address: str | None = None
+    escrow_tx_hash: str | None = None
 
 
 class NegotiationOutcomeResponse(BaseModel):
@@ -29,3 +31,5 @@ class NegotiationOutcomeResponse(BaseModel):
     final_price: float | None
     reason: str | None = None
     negotiation_rounds: int | None = None
+    omega_hat: float | None = None
+    buyer_valuation: float | None = None
