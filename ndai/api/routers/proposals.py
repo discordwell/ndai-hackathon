@@ -390,9 +390,11 @@ async def _emit_progress(proposal_id: str, phase: str, data: dict | None = None)
 async def _run_verification(proposal_id: str):
     """Background task: run capability-oracle verification against a known target.
 
-    Calls VulnVerificationProtocol directly (simulated mode — no enclave needed).
-    Emits SSE events matching the frontend VerificationProgress component:
-    building → build_done → verifying → verify_done → result | error_event
+    In simulated mode, runs VulnVerificationProtocol directly in-process.
+    In nitro mode, routes through VerificationDispatcher → NitroVerifier →
+    VulnVerifyOrchestrator for real Nitro Enclave execution.
+
+    Emits SSE events: building → build_done → verifying → verify_done → result | error_event
     """
     try:
         # 1. Load proposal + target
@@ -414,58 +416,28 @@ async def _run_verification(proposal_id: str):
                 raise RuntimeError(f"Target {proposal.target_id} not found")
 
             # Snapshot fields needed after session closes
-            prop_poc_script = proposal.poc_script
-            prop_poc_script_type = proposal.poc_script_type
             prop_claimed_capability = proposal.claimed_capability
-            prop_reliability_runs = proposal.reliability_runs
-            prop_target_id = proposal.target_id
-            prop_id = proposal.id
 
-        # 2. Build TargetSpec from KnownTarget + proposal
+        # 2. Route to appropriate verification backend
+        from ndai.config import settings as app_settings
+
         await _emit_progress(proposal_id, "building", {"message": "Constructing target specification..."})
         _verification_statuses[proposal_id] = {"status": "building"}
 
-        from ndai.services.nitro_verifier import NitroVerifier
-        verifier = NitroVerifier()
-        target_spec = verifier.build_target_spec(target, proposal)
+        if app_settings.tee_mode == "nitro":
+            # Full Nitro pipeline: EIF build → enclave launch → attestation → verify
+            result_json, chain_hash, pcr0 = await _run_nitro_verification(
+                proposal_id, proposal, target, prop_claimed_capability,
+            )
+        else:
+            # Simulated: run protocol directly in-process
+            result_json, chain_hash, pcr0 = await _run_simulated_verification(
+                proposal_id, proposal, target, prop_claimed_capability,
+            )
 
-        await _emit_progress(proposal_id, "build_done", {"message": "Target specification ready."})
+        passed = result_json.get("passed", False)
 
-        # 3. Create protocol components (simulated mode — no RLIMIT enforcement)
-        from ndai.enclave.vuln_verify.protocol import VulnVerificationProtocol
-        from ndai.enclave.vuln_verify.poc_executor import PoCExecutor
-        from ndai.enclave.vuln_verify.oracles import OracleManager
-
-        executor = PoCExecutor(enforce_rlimits=False)
-        oracle = OracleManager()
-        protocol = VulnVerificationProtocol(
-            spec=target_spec,
-            executor=executor,
-            oracle=oracle,
-        )
-
-        # 4. Run verification (synchronous protocol, run in thread)
-        await _emit_progress(proposal_id, "verifying", {"message": "Running capability oracles..."})
-        _verification_statuses[proposal_id] = {"status": "verifying"}
-
-        result = await asyncio.wait_for(
-            asyncio.to_thread(protocol.run),
-            timeout=300,  # 5 minute hard cap
-        )
-
-        # 5. Map VerificationResult to frontend-expected format
-        unpatched = result.unpatched_capability
-        passed = unpatched is not None and unpatched.verified_level is not None
-
-        result_json = {
-            "claimed_capability": prop_claimed_capability,
-            "verified_capability": unpatched.verified_level.value if passed and unpatched.verified_level else None,
-            "reliability_score": unpatched.reliability_score if unpatched else 0.0,
-            "passed": passed,
-            "error": None if passed else "Capability not verified by oracle",
-        }
-
-        # 6. Persist to DB
+        # 3. Persist to DB
         async with get_db_context() as db:
             db_result = await db.execute(
                 select(VerificationProposal)
@@ -476,24 +448,23 @@ async def _run_verification(proposal_id: str):
             if prop:
                 prop.status = "passed" if passed else "failed"
                 prop.verification_result_json = result_json
-                prop.verification_chain_hash = result.verification_chain_hash
-                prop.attestation_pcr0 = "simulated"
+                prop.verification_chain_hash = chain_hash
+                prop.attestation_pcr0 = pcr0
                 prop.error_details = None if passed else "Capability not verified by oracle"
                 await db.commit()
 
-        # 7. Emit terminal SSE events
+        # 4. Emit terminal SSE events
         await _emit_progress(proposal_id, "verify_done", {"message": "Oracle checks complete."})
         await _emit_progress(proposal_id, "result", result_json)
         _verification_statuses[proposal_id] = {"status": "passed" if passed else "failed"}
 
         logger.info(
-            "Verification complete for proposal %s: passed=%s reliability=%.2f",
-            proposal_id, passed, result_json["reliability_score"],
+            "Verification complete for proposal %s: passed=%s pcr0=%s",
+            proposal_id, passed, pcr0[:16] if pcr0 else "none",
         )
 
     except Exception as e:
         logger.exception("Verification failed for proposal %s", proposal_id)
-        # Persist error status
         try:
             async with get_db_context() as db:
                 db_result = await db.execute(
@@ -511,3 +482,61 @@ async def _run_verification(proposal_id: str):
 
         await _emit_progress(proposal_id, "error_event", {"message": str(e)})
         _verification_statuses[proposal_id] = {"status": "error", "error": str(e)}
+
+
+async def _run_nitro_verification(proposal_id, proposal, target, claimed_capability):
+    """Full Nitro pipeline: EIF build → enclave → attestation → oracle verification."""
+    from ndai.services.verification_dispatcher import VerificationDispatcher
+
+    async def progress_cb(phase, data):
+        await _emit_progress(proposal_id, phase, data)
+
+    dispatcher = VerificationDispatcher()
+    outcome = await dispatcher.dispatch(proposal, target, progress_callback=progress_cb)
+
+    passed = outcome.success
+    result_json = {
+        "claimed_capability": claimed_capability,
+        "verified_capability": None,
+        "reliability_score": 0.0,
+        "passed": passed,
+        "error": outcome.error,
+    }
+    if outcome.capability_result:
+        result_json.update(outcome.capability_result)
+
+    return result_json, outcome.chain_hash, outcome.pcr0 or "nitro"
+
+
+async def _run_simulated_verification(proposal_id, proposal, target, claimed_capability):
+    """Simulated mode: run VulnVerificationProtocol directly in-process."""
+    from ndai.services.nitro_verifier import NitroVerifier
+    verifier = NitroVerifier()
+    target_spec = verifier.build_target_spec(target, proposal)
+
+    await _emit_progress(proposal_id, "build_done", {"message": "Target specification ready."})
+
+    from ndai.enclave.vuln_verify.protocol import VulnVerificationProtocol
+    from ndai.enclave.vuln_verify.poc_executor import PoCExecutor
+    from ndai.enclave.vuln_verify.oracles import OracleManager
+
+    executor = PoCExecutor(enforce_rlimits=False)
+    oracle = OracleManager()
+    protocol = VulnVerificationProtocol(spec=target_spec, executor=executor, oracle=oracle)
+
+    await _emit_progress(proposal_id, "verifying", {"message": "Running capability oracles..."})
+    _verification_statuses[proposal_id] = {"status": "verifying"}
+
+    result = await asyncio.wait_for(asyncio.to_thread(protocol.run), timeout=300)
+
+    unpatched = result.unpatched_capability
+    passed = unpatched is not None and unpatched.verified_level is not None
+
+    result_json = {
+        "claimed_capability": claimed_capability,
+        "verified_capability": unpatched.verified_level.value if passed and unpatched.verified_level else None,
+        "reliability_score": unpatched.reliability_score if unpatched else 0.0,
+        "passed": passed,
+        "error": None if passed else "Capability not verified by oracle",
+    }
+    return result_json, result.verification_chain_hash, "simulated"

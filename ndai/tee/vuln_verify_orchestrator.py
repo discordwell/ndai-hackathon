@@ -118,14 +118,19 @@ class VulnVerifyOrchestrator:
             )
 
             elapsed = time.monotonic() - start_time
+            unpatched_ok = result.unpatched_capability.verified_level is not None
+            patched_ok = (
+                result.patched_capability.verified_level is not None
+                if result.patched_capability else None
+            )
             logger.info(
                 "Verification complete: unpatched=%s overlap=%s elapsed=%.1fs",
-                result.unpatched_matches_expected, result.overlap_detected, elapsed,
+                unpatched_ok, result.overlap_detected, elapsed,
             )
 
             return VerificationOutcome(
-                unpatched_matches=result.unpatched_matches_expected,
-                patched_matches=result.patched_matches_expected,
+                unpatched_matches=unpatched_ok,
+                patched_matches=patched_ok,
                 overlap_detected=result.overlap_detected,
                 verification_chain_hash=result.verification_chain_hash,
                 pcr0=attestation.pcrs.get(0, "simulated"),
@@ -266,10 +271,11 @@ class VulnVerifyOrchestrator:
                 "timeout_sec": spec.poc.timeout_sec,
                 "run_as_user": spec.poc.run_as_user,
             },
-            "expected_outcome": {
-                "exit_code": spec.expected_outcome.exit_code,
-                "stdout_contains": spec.expected_outcome.stdout_contains,
-                "stderr_contains": spec.expected_outcome.stderr_contains,
-                "crash_signal": spec.expected_outcome.crash_signal,
+            "claimed_capability": {
+                "level": spec.claimed_capability.level.value,
+                "reliability_runs": spec.claimed_capability.reliability_runs,
+                "crash_signal": spec.claimed_capability.crash_signal,
+                "exit_code": spec.claimed_capability.exit_code,
             },
+            "service_user": spec.service_user,
         }

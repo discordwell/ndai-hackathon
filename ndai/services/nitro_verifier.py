@@ -137,41 +137,44 @@ class NitroVerifier:
                 })
 
             # Run verification via the enclave pipeline
-            # In simulated mode, this runs locally; in Nitro mode, this runs in the enclave
-            from ndai.enclave.vuln_verify.orchestrator import VulnVerificationOrchestrator
-            orchestrator = VulnVerificationOrchestrator()
-            result = await orchestrator.verify(target_spec, manifest)
+            # In simulated mode, this runs locally; in Nitro mode, this launches a real enclave
+            from ndai.config import settings as app_settings
+            from ndai.tee.vuln_verify_orchestrator import VerificationConfig, VulnVerifyOrchestrator
 
-            # Determine success based on verified capability
-            success = (
-                result.unpatched_capability.verified_level is not None
-                and result.unpatched_capability.reliability_score > 0.0
+            # Get the appropriate TEE provider based on tee_mode
+            if app_settings.tee_mode == "nitro":
+                from ndai.tee.nitro_provider import NitroEnclaveProvider
+                provider = NitroEnclaveProvider()
+            else:
+                from ndai.tee.simulated_provider import SimulatedTEEProvider
+                provider = SimulatedTEEProvider()
+
+            config = VerificationConfig(
+                target_spec=target_spec,
+                eif_path=manifest.eif_path,
+                expected_pcrs={0: manifest.pcr0, 1: manifest.pcr1, 2: manifest.pcr2}
+                if manifest.pcr0 != "simulated" else None,
+                api_key=app_settings.openai_api_key or app_settings.anthropic_api_key,
             )
+            orchestrator = VulnVerifyOrchestrator(provider=provider)
+            outcome = await orchestrator.run_verification(config)
 
             if progress_callback:
-                phase = "passed" if success else "failed"
+                phase = "passed" if outcome.unpatched_matches else "failed"
                 await progress_callback(phase, {
-                    "message": f"Verification {'passed' if success else 'failed'}",
-                    "claimed": result.unpatched_capability.claimed.value,
-                    "verified": result.unpatched_capability.verified_level.value if result.unpatched_capability.verified_level else None,
-                    "reliability": result.unpatched_capability.reliability_score,
+                    "message": f"Verification {'passed' if outcome.unpatched_matches else 'failed'}",
+                    "pcr0": outcome.pcr0[:16] if outcome.pcr0 else None,
                 })
 
             return VerificationOutcome(
-                success=success,
+                success=outcome.unpatched_matches,
                 capability_result={
-                    "claimed": result.unpatched_capability.claimed.value,
-                    "verified_level": result.unpatched_capability.verified_level.value if result.unpatched_capability.verified_level else None,
-                    "reliability_score": result.unpatched_capability.reliability_score,
-                    "ace_canary_found": result.unpatched_capability.ace_canary_found,
-                    "lpe_canary_found": result.unpatched_capability.lpe_canary_found,
-                    "info_canary_found": result.unpatched_capability.info_canary_found,
-                    "callback_received": result.unpatched_capability.callback_received,
-                    "crash_detected": result.unpatched_capability.crash_detected,
+                    "overlap_detected": outcome.overlap_detected,
+                    "verification_chain_hash": outcome.verification_chain_hash,
                 },
-                chain_hash=result.verification_chain_hash,
-                pcr0=manifest.pcr0,
-                status="passed" if success else "failed",
+                chain_hash=outcome.verification_chain_hash,
+                pcr0=outcome.pcr0,
+                status="passed" if outcome.unpatched_matches else "failed",
             )
 
         except Exception as e:
