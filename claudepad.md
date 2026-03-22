@@ -2,6 +2,19 @@
 
 ## Session Summaries
 
+### 2026-03-23T15:00Z — E2E Encrypted Messaging: Signal Protocol (X3DH + Double Ratchet)
+- Built E2E encrypted messaging for zdayzk.com — both deal-scoped chat and platform-wide DMs
+- **Signal protocol**: Full X3DH key agreement (4 DH computations, HKDF, ephemeral keys) + Double Ratchet (~400 LOC) with forward secrecy, skipped message keys (max 100), AES-256-GCM per message
+- **Key hierarchy**: passphrase → argon2id → Ed25519 → X25519 (birational map via @noble/curves) → deterministic SPK/OTPK derivation via HKDF. ALL keys deterministic from passphrase — no persistent storage needed.
+- **Prekey management**: Signed prekey (rotated per index) + 20 one-time prekeys (replenished when <5). Server stores public halves only. Private halves re-derived from passphrase.
+- **Backend**: messaging.py router at /api/v1/messaging with 7 endpoints (prekey upload/fetch/status, conversation create/list, message send, SSE stream). Per-user global SSE with undelivered message flush on connect.
+- **Database**: 4 new tables (messaging_prekeys, messaging_otpks, messaging_conversations, messaging_messages). Deterministic conversation IDs for DMs via SHA256(sort(pubA,pubB)). Messages expire after 30 days.
+- **ZK auth migration**: Migrated frontend-zk from email/password to passphrase-based ZK auth (argon2id → Ed25519 → challenge-response). Private key in React state only, JWT in sessionStorage.
+- **Frontend**: InboxPage, ConversationPage, NewConversationPage, ChatBubble, ChatInput components. MESSAGES nav item. useMessagingStream SSE hook. messaging.ts API client.
+- **Platform blindness**: Server stores only ciphertext + public key material. Cannot read messages. AES-256-GCM with authenticated additional data (ratchet header).
+- 6 new unit tests, frontend-zk builds clean.
+- **TODO**: Wire Double Ratchet into ConversationPage (currently sends dev plaintext). Prekey upload on registration. Multi-tab coordination via BroadcastChannel.
+
 ### 2026-03-23T14:00Z — ZK-Authenticated 0day Marketplace: Password-Derived Identity
 - Built zero-knowledge auth system for the vuln marketplace — separate from existing email/password auth
 - **Crypto auth**: Password → argon2id (256MB, 3 iterations, 4 parallelism) → Ed25519 keypair. Server stores ONLY public keys. Challenge-response login (nonce in Redis, 60s TTL, one-time use). JWT issued with `auth_type: "zk"` claim, rejected by regular `get_current_user`.

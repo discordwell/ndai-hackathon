@@ -1,26 +1,19 @@
 import React, { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { login as apiLogin } from "../api/auth";
 
 export function LoginPage() {
-  const { login } = useAuth();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const { login, isDerivingKey } = useAuth();
+  const [passphrase, setPassphrase] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    setLoading(true);
     try {
-      const response = await apiLogin(email, password);
-      login(response);
+      await login(passphrase);
       window.location.hash = "#/browse";
     } catch (err: any) {
-      setError(err.detail || "Login failed");
-    } finally {
-      setLoading(false);
+      setError(err.detail || err.message || "Authentication failed");
     }
   }
 
@@ -41,32 +34,30 @@ export function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="zk-label">EMAIL</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="zk-input"
-              required
-            />
-          </div>
-          <div>
-            <label className="zk-label">PASSWORD</label>
+            <label className="zk-label">PASSPHRASE</label>
             <input
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              value={passphrase}
+              onChange={(e) => setPassphrase(e.target.value)}
               className="zk-input"
               required
+              placeholder="Enter your passphrase"
+              disabled={isDerivingKey}
             />
           </div>
-          <button type="submit" disabled={loading} className="zk-btn-accent w-full disabled:opacity-50">
-            {loading ? "..." : "ENTER"}
+          <button type="submit" disabled={isDerivingKey} className="zk-btn-accent w-full disabled:opacity-50">
+            {isDerivingKey ? "DERIVING KEY..." : "ENTER"}
           </button>
         </form>
 
+        {isDerivingKey && (
+          <p className="font-mono text-xs text-zk-muted mt-4">
+            Deriving cryptographic identity (2-4 seconds)...
+          </p>
+        )}
+
         <p className="font-mono text-xs text-zk-muted mt-6">
-          No account? <a href="#/register">Register</a>
+          No identity? <a href="#/register">Create one</a>
         </p>
       </div>
     </div>

@@ -15,6 +15,9 @@ import { MyRFPsPage } from "../pages/buy/MyRFPsPage";
 import { RFPManagePage } from "../pages/buy/RFPManagePage";
 import { DealsListPage } from "../pages/deals/DealsListPage";
 import { DealPage } from "../pages/deals/DealPage";
+import { InboxPage } from "../pages/messages/InboxPage";
+import { ConversationPage } from "../pages/messages/ConversationPage";
+import { NewConversationPage } from "../pages/messages/NewConversationPage";
 
 function useHash(): string {
   const [hash, setHash] = useState(window.location.hash || "#/");
@@ -72,6 +75,14 @@ export function Router() {
   if (path === "/deals") content = <DealsListPage />;
   const dealMatch = path.match(/^\/deals\/(.+)$/);
   if (dealMatch) content = <DealPage id={dealMatch[1]} />;
+
+  // Messages
+  if (path === "/messages") content = <InboxPage />;
+  if (path === "/messages/new") content = <NewConversationPage />;
+  const msgDealMatch = path.match(/^\/messages\/deal\/(.+)$/);
+  if (msgDealMatch) content = <ConversationPage conversationId={msgDealMatch[1]} />;
+  const msgMatch = path.match(/^\/messages\/([^/]+)$/);
+  if (msgMatch && !path.startsWith("/messages/new") && !path.startsWith("/messages/deal/")) content = <ConversationPage conversationId={msgMatch[1]} />;
 
   if (content) {
     return <MarketplaceLayout>{content}</MarketplaceLayout>;

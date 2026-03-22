@@ -6,6 +6,7 @@ const NAV_ITEMS = [
   { label: "SELL", hash: "#/sell" },
   { label: "BUY", hash: "#/buy" },
   { label: "DEALS", hash: "#/deals" },
+  { label: "MESSAGES", hash: "#/messages" },
 ];
 
 export function MarketplaceLayout({ children }: { children: React.ReactNode }) {

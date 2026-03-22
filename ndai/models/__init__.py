@@ -14,6 +14,7 @@ from ndai.models.delivery import DeliveryRecord
 from ndai.models.zk_identity import VulnIdentity
 from ndai.models.zk_vulnerability import ZKVulnerability, ZKVulnAgreement, ZKVulnOutcome
 from ndai.models.bounty import Bounty
+from ndai.models.messaging import MessagingPrekey, MessagingOTPK, MessagingConversation, MessagingMessage
 
 __all__ = [
     "Base",
@@ -43,4 +44,8 @@ __all__ = [
     "ZKVulnAgreement",
     "ZKVulnOutcome",
     "Bounty",
+    "MessagingPrekey",
+    "MessagingOTPK",
+    "MessagingConversation",
+    "MessagingMessage",
 ]
