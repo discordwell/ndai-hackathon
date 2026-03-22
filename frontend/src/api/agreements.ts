@@ -3,6 +3,7 @@ import type {
   AgreementCreateRequest,
   AgreementParamsRequest,
   AgreementResponse,
+  EscrowStateResponse,
 } from "./types";
 
 export function createAgreement(
@@ -28,4 +29,8 @@ export function setAgreementParams(
 
 export function confirmAgreement(id: string): Promise<AgreementResponse> {
   return post<AgreementResponse>(`/agreements/${id}/confirm`);
+}
+
+export function getEscrowState(id: string): Promise<EscrowStateResponse> {
+  return get<EscrowStateResponse>(`/agreements/${id}/escrow-state`);
 }

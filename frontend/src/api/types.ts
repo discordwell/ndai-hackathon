@@ -65,6 +65,8 @@ export interface AgreementResponse {
   alpha_0: number | null;
   budget_cap: number | null;
   theta: number | null;
+  escrow_address?: string | null;
+  escrow_tx_hash?: string | null;
 }
 
 export interface AgreementParamsRequest {
@@ -78,11 +80,26 @@ export interface NegotiationOutcomeResponse {
   final_price: number | null;
   reason: string | null;
   negotiation_rounds: number | null;
+  omega_hat?: number | null;
+  buyer_valuation?: number | null;
 }
 
 export interface NegotiationStatusResponse {
   status: "pending" | "running" | "completed" | "error";
   outcome?: NegotiationOutcomeResponse;
+  error?: string;
+}
+
+export interface EscrowStateResponse {
+  escrow_address: string;
+  state?: string;
+  balance_wei?: number;
+  reserve_price_wei?: number;
+  budget_cap_wei?: number;
+  final_price_wei?: number;
+  attestation_hash?: string;
+  deadline?: number;
+  blockchain_unavailable?: boolean;
   error?: string;
 }
 
