@@ -7,13 +7,13 @@ import "./VulnEscrow.sol";
 /// @notice The factory owner is the platform operator who receives the 10% fee.
 contract VulnEscrowFactory {
     address[] public escrows;
-    address public immutable platformAddress; // Platform operator — receives 10% fee
+    address public immutable platformAddress;
 
     event EscrowCreated(
         address indexed escrow,
         address indexed buyer,
         address indexed seller,
-        bool isExclusive
+        uint256 price
     );
 
     constructor(address _platformAddress) {
@@ -21,15 +21,12 @@ contract VulnEscrowFactory {
         platformAddress = _platformAddress;
     }
 
-    /// @notice Deploy a new VulnEscrow for a vulnerability deal.
-    ///         The platform fee address is automatically set from the factory.
+    /// @notice Deploy a new VulnEscrow. Caller is the buyer, msg.value is the funding.
     function createEscrow(
         address seller,
         address operator,
-        uint256 reservePrice,
+        uint256 price,
         uint256 deadline,
-        uint256 discoveryTimestamp,
-        uint256 embargoDays,
         bool    isExclusive
     ) external payable returns (address) {
         VulnEscrow escrow = new VulnEscrow{value: msg.value}(
@@ -37,15 +34,13 @@ contract VulnEscrowFactory {
             seller,
             operator,
             platformAddress,
-            reservePrice,
+            price,
             deadline,
-            discoveryTimestamp,
-            embargoDays,
             isExclusive
         );
         address addr = address(escrow);
         escrows.push(addr);
-        emit EscrowCreated(addr, msg.sender, seller, isExclusive);
+        emit EscrowCreated(addr, msg.sender, seller, price);
         return addr;
     }
 

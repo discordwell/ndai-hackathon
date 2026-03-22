@@ -4,38 +4,32 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title VulnEscrow — Escrow for zero-day vulnerability marketplace deals
-/// @notice Extends the NdaiEscrow pattern with time-decay pricing, patch oracle,
-///         and embargo tracking for vulnerability transactions.
+/// @notice Seller lists a price, buyer pays it, platform takes 10%.
+///         The TEE verifies the exploit is real before the seller can accept.
 contract VulnEscrow is ReentrancyGuard {
-    enum State { Created, Funded, Evaluated, Accepted, Rejected, Expired, PatchRefunded }
+    enum State { Created, Funded, Verified, Accepted, Rejected, Expired, PatchRefunded }
 
     address public immutable seller;
     address public immutable buyer;
-    address public immutable operator;
-    address public immutable platform;   // Platform operator — receives fee
-    uint256 public immutable reservePrice;
-    uint256 public immutable budgetCap;
+    address public immutable operator;   // TEE operator — submits verification result
+    address public immutable platform;   // Platform operator — receives 10% fee
+    uint256 public immutable price;      // Seller's asking price
     uint256 public immutable deadline;
     uint256 public constant PLATFORM_FEE_BPS = 1000; // 10% in basis points
 
-    // Vuln-specific immutables
-    uint256 public immutable discoveryTimestamp;
-    uint256 public immutable embargoEndTimestamp;
+    // Vuln metadata
     bool    public immutable isExclusive;
 
-    // Mutable state
-    uint256 public finalPrice;
-    uint256 public decayAdjustedPrice;
-    uint256 public decayNumerator;   // Decay factor * 1e18
+    // Set by operator after TEE verification
     bytes32 public attestationHash;
     State   public state;
     bool    public isPatchedBeforeSettlement;
 
     // Sealed delivery commitments (exploit transfer)
-    bytes32 public deliveryHash;     // SHA-256(encrypted_exploit) — integrity proof
-    bytes32 public keyCommitment;    // SHA-256(encrypted_delivery_key) — accountability proof
+    bytes32 public deliveryHash;     // SHA-256(encrypted_exploit)
+    bytes32 public keyCommitment;    // SHA-256(encrypted_delivery_key)
 
-    event OutcomeSubmitted(uint256 finalPrice, uint256 decayAdjustedPrice, bytes32 attestationHash);
+    event Verified(bytes32 attestationHash, bytes32 deliveryHash, bytes32 keyCommitment);
     event DealAccepted(uint256 sellerPayout, uint256 platformFee, uint256 buyerRefund);
     event DealRejected(uint256 buyerRefund);
     event DealExpired(uint256 buyerRefund);
@@ -45,79 +39,56 @@ contract VulnEscrow is ReentrancyGuard {
     modifier onlySeller()   { require(msg.sender == seller,   "Only seller");   _; }
     modifier inState(State s) { require(state == s, "Wrong state"); _; }
 
+    /// @param _buyer       Buyer address (funds the escrow)
+    /// @param _seller      Vulnerability researcher
+    /// @param _operator    TEE operator
+    /// @param _platform    Platform fee recipient
+    /// @param _price       Seller's asking price (buyer must fund at least this much)
+    /// @param _deadline    Unix timestamp — deal expires after this
+    /// @param _isExclusive Whether this is an exclusive deal
     constructor(
         address _buyer,
         address _seller,
         address _operator,
         address _platform,
-        uint256 _reservePrice,
+        uint256 _price,
         uint256 _deadline,
-        uint256 _discoveryTimestamp,
-        uint256 _embargoDays,
         bool    _isExclusive
     ) payable {
+        require(msg.value >= _price, "Insufficient funding");
         require(msg.value > 0, "Must fund escrow");
         require(_buyer    != address(0), "Invalid buyer");
         require(_seller   != address(0), "Invalid seller");
         require(_operator != address(0), "Invalid operator");
         require(_platform != address(0), "Invalid platform");
-        require(_reservePrice <= msg.value, "Reserve exceeds budget");
+        require(_price > 0, "Price must be positive");
         require(_deadline > block.timestamp, "Deadline in past");
 
         seller   = _seller;
         buyer    = _buyer;
         operator = _operator;
         platform = _platform;
-        reservePrice = _reservePrice;
-        budgetCap    = msg.value;
-        deadline     = _deadline;
-
-        discoveryTimestamp  = _discoveryTimestamp;
-        embargoEndTimestamp = block.timestamp + (_embargoDays * 1 days);
+        price    = _price;
+        deadline = _deadline;
         isExclusive = _isExclusive;
         state = State.Funded;
     }
 
-    /// @notice Operator submits negotiation outcome with decay-adjusted pricing and delivery commitments.
-    /// @param _finalPrice      Raw Nash-bargained price (before decay)
-    /// @param _attestationHash Hash from TEE attestation
-    /// @param _decayNumerator  Decay factor × 1e18
-    /// @param _deliveryHash    SHA-256(encrypted_exploit) — integrity commitment
-    /// @param _keyCommitment   SHA-256(encrypted_delivery_key) — accountability commitment
-    function submitOutcome(
-        uint256 _finalPrice,
+    /// @notice TEE operator submits verification result + sealed delivery commitments.
+    ///         This proves the exploit is real (capability oracle passed inside the enclave).
+    function submitVerification(
         bytes32 _attestationHash,
-        uint256 _decayNumerator,
         bytes32 _deliveryHash,
         bytes32 _keyCommitment
     ) external onlyOperator inState(State.Funded) {
-        require(_decayNumerator <= 1e18, "Decay numerator exceeds 1.0");
-        require(_decayNumerator > 0, "Decay numerator must be positive");
-
-        uint256 adjusted = (_finalPrice * _decayNumerator) / 1e18;
-        require(adjusted <= budgetCap, "Adjusted price exceeds budget");
-        require(adjusted >= reservePrice, "Adjusted price below reserve");
-
-        finalPrice        = _finalPrice;
-        decayNumerator    = _decayNumerator;
-        decayAdjustedPrice = adjusted;
-        attestationHash    = _attestationHash;
-        deliveryHash       = _deliveryHash;
-        keyCommitment      = _keyCommitment;
-        state = State.Evaluated;
-
-        emit OutcomeSubmitted(_finalPrice, adjusted, _attestationHash);
+        attestationHash = _attestationHash;
+        deliveryHash    = _deliveryHash;
+        keyCommitment   = _keyCommitment;
+        state = State.Verified;
+        emit Verified(_attestationHash, _deliveryHash, _keyCommitment);
     }
 
-    /// @notice Verify delivery commitments match stored values.
-    function verifyDelivery(bytes32 _deliveryHash, bytes32 _keyCommitment)
-        external view returns (bool)
-    {
-        return deliveryHash == _deliveryHash && keyCommitment == _keyCommitment;
-    }
-
-    /// @notice Operator reports that the vulnerability has been independently patched.
-    ///         Full refund to buyer.
+    /// @notice Operator reports the vuln was independently patched. Full refund.
     function reportPatch() external onlyOperator inState(State.Funded) nonReentrant {
         isPatchedBeforeSettlement = true;
         state = State.PatchRefunded;
@@ -127,12 +98,13 @@ contract VulnEscrow is ReentrancyGuard {
         require(ok, "Refund failed");
     }
 
-    /// @notice Seller accepts the deal. Splits payment: 90% seller, 10% platform, rest refunded to buyer.
-    function acceptDeal() external onlySeller inState(State.Evaluated) nonReentrant {
+    /// @notice Seller accepts the deal. Payment splits: 90% seller, 10% platform.
+    ///         Any excess funding is refunded to the buyer.
+    function acceptDeal() external onlySeller inState(State.Verified) nonReentrant {
         state = State.Accepted;
-        uint256 fee = (decayAdjustedPrice * PLATFORM_FEE_BPS) / 10000;
-        uint256 sellerPayout = decayAdjustedPrice - fee;
-        uint256 buyerRefund  = address(this).balance - decayAdjustedPrice;
+        uint256 fee = (price * PLATFORM_FEE_BPS) / 10000;
+        uint256 sellerPayout = price - fee;
+        uint256 buyerRefund  = address(this).balance - price;
         emit DealAccepted(sellerPayout, fee, buyerRefund);
         (bool s1,) = seller.call{value: sellerPayout}("");
         require(s1, "Seller transfer failed");
@@ -145,7 +117,7 @@ contract VulnEscrow is ReentrancyGuard {
     }
 
     /// @notice Seller rejects the deal. Full refund to buyer.
-    function rejectDeal() external onlySeller inState(State.Evaluated) nonReentrant {
+    function rejectDeal() external onlySeller inState(State.Verified) nonReentrant {
         state = State.Rejected;
         uint256 refund = address(this).balance;
         emit DealRejected(refund);
@@ -153,10 +125,10 @@ contract VulnEscrow is ReentrancyGuard {
         require(ok, "Refund failed");
     }
 
-    /// @notice Anyone can claim expired deal after deadline. Full refund to buyer.
+    /// @notice Anyone can trigger refund after deadline.
     function claimExpired() external nonReentrant {
         require(block.timestamp > deadline, "Not expired");
-        require(state == State.Funded || state == State.Evaluated, "Wrong state");
+        require(state == State.Funded || state == State.Verified, "Wrong state");
         state = State.Expired;
         uint256 refund = address(this).balance;
         emit DealExpired(refund);
@@ -164,15 +136,17 @@ contract VulnEscrow is ReentrancyGuard {
         require(ok, "Refund failed");
     }
 
-    /// @notice Verify attestation hash matches provided components.
+    /// @notice Verify attestation hash.
     function verifyAttestation(bytes32 pcr0, bytes32 nonce, bytes32 outcome)
         external view returns (bool)
     {
         return attestationHash == keccak256(abi.encodePacked(pcr0, nonce, outcome));
     }
 
-    /// @notice Check if embargo period is still active.
-    function isEmbargoActive() external view returns (bool) {
-        return block.timestamp < embargoEndTimestamp;
+    /// @notice Verify delivery commitments.
+    function verifyDelivery(bytes32 _deliveryHash, bytes32 _keyCommitment)
+        external view returns (bool)
+    {
+        return deliveryHash == _deliveryHash && keyCommitment == _keyCommitment;
     }
 }
