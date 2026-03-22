@@ -37,7 +37,7 @@ function useHash(): string {
 export function Router() {
   const hash = useHash();
   const { isAuthenticated } = useAuth();
-  const path = hash.replace("#", "");
+  const path = hash.replace("#", "").split("?")[0];
 
   // Public routes
   if (path === "/" || path === "") return <LandingPage />;
