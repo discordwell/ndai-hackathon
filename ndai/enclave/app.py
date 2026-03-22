@@ -70,6 +70,7 @@ class EnclaveState:
         self.nitro_mode: bool = False  # True when real NSM is available
         self.nsm_stub = None  # Cached NSMStub instance for dev mode
         self.poker_tables: dict = {}  # table_id -> TableState (sealed game state)
+        self.pending_overlay = None  # BuyerOverlay, set via deliver_overlay
 
     def initialize(self):
         """Generate ephemeral keypair and detect NSM availability."""
@@ -331,6 +332,10 @@ def _handle_request(request: dict[str, Any]) -> dict[str, Any]:
         return {"status": "ok", "action": "pong"}
     elif action == "vuln_negotiate":
         return _handle_vuln_negotiate(request)
+    elif action == "vuln_verify":
+        return _handle_vuln_verify(request)
+    elif action == "deliver_overlay":
+        return _handle_deliver_overlay(request)
     elif action and action.startswith("poker_"):
         from ndai.enclave.poker.actions import handle_poker_action
         return handle_poker_action(request, _state.poker_tables)
@@ -428,6 +433,88 @@ def _handle_vuln_negotiate(request: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         logger.exception("Vuln negotiation failed")
         return {"status": "error", "error": "Negotiation failed. Check enclave logs."}
+
+
+def _handle_vuln_verify(request: dict[str, Any]) -> dict[str, Any]:
+    """Run PoC verification against the target software in this enclave."""
+    try:
+        from ndai.enclave.vuln_verify.models import (
+            ConfigFile, ExpectedOutcome, PinnedPackage, PoCSpec, ServiceSpec, TargetSpec,
+        )
+        from ndai.enclave.vuln_verify.overlay_handler import OverlayHandler
+        from ndai.enclave.vuln_verify.protocol import VulnVerificationProtocol
+
+        data = request.get("data", request)
+        spec_data = data.get("target_spec", {})
+
+        spec = TargetSpec(
+            spec_id=spec_data.get("spec_id", ""),
+            base_image=spec_data.get("base_image", ""),
+            packages=[PinnedPackage(**p) for p in spec_data.get("packages", [])],
+            config_files=[ConfigFile(**c) for c in spec_data.get("config_files", [])],
+            services=[ServiceSpec(**s) for s in spec_data.get("services", [])],
+            poc=PoCSpec(**spec_data.get("poc", {"script_type": "bash", "script_content": "true"})),
+            expected_outcome=ExpectedOutcome(**spec_data.get("expected_outcome", {})),
+        )
+
+        overlay = _state.pending_overlay
+        overlay_handler = OverlayHandler(keypair=_state.keypair) if overlay else None
+
+        protocol = VulnVerificationProtocol(
+            spec=spec, overlay=overlay, overlay_handler=overlay_handler,
+        )
+        result = protocol.run()
+
+        # Clear overlay after use
+        _state.pending_overlay = None
+
+        # Only safe fields leave the enclave
+        safe_result = {
+            "spec_id": result.spec_id,
+            "unpatched_matches": result.unpatched_matches_expected,
+            "patched_matches": result.patched_matches_expected,
+            "overlap_detected": result.overlap_detected,
+            "verification_chain_hash": result.verification_chain_hash,
+            "timestamp": result.timestamp,
+        }
+
+        return {"status": "ok", "result": safe_result}
+
+    except (KeyError, ValueError, TypeError) as exc:
+        logger.error("Invalid vuln verify request: %s", exc)
+        return {"status": "error", "error": f"Invalid request: {exc}"}
+    except Exception:
+        logger.exception("Vuln verification failed")
+        return {"status": "error", "error": "Verification failed. Check enclave logs."}
+
+
+def _handle_deliver_overlay(request: dict[str, Any]) -> dict[str, Any]:
+    """Receive and decrypt a buyer's overlay."""
+    try:
+        from ndai.enclave.vuln_verify.overlay_handler import OverlayHandler
+
+        encrypted_data = request.get("encrypted_overlay")
+        if not encrypted_data:
+            return {"status": "error", "error": "No encrypted_overlay in request"}
+
+        if isinstance(encrypted_data, str):
+            import base64
+            encrypted_bytes = base64.b64decode(encrypted_data)
+        else:
+            encrypted_bytes = bytes(encrypted_data)
+
+        handler = OverlayHandler(keypair=_state.keypair)
+        _state.pending_overlay = handler.decrypt_overlay(encrypted_bytes)
+
+        logger.info(
+            "Overlay delivered: %d file replacements",
+            len(_state.pending_overlay.file_replacements),
+        )
+        return {"status": "ok", "files": len(_state.pending_overlay.file_replacements)}
+
+    except Exception as exc:
+        logger.error("Overlay delivery failed: %s", exc)
+        return {"status": "error", "error": f"Overlay delivery failed: {exc}"}
 
 
 def _handle_attestation(request: dict[str, Any]) -> dict[str, Any]:

@@ -64,5 +64,14 @@ class Settings(BaseSettings):
     vuln_marketplace_enabled: bool = True
     vuln_escrow_factory_address: str = ""
 
+    # Vulnerability verification (Phase 3)
+    vuln_verify_enabled: bool = True
+    vuln_eif_build_dir: str = "/tmp/ndai-eif-builds"
+    vuln_eif_store_dir: str = "/opt/ndai/eifs"
+    vuln_poc_timeout_sec: int = 120
+    vuln_poc_max_memory_mb: int = 512
+    vuln_overlay_max_size_mb: int = 500
+    vuln_verify_enclave_memory_mib: int = 2048
+
 
 settings = Settings()

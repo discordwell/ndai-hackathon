@@ -2,6 +2,17 @@
 
 ## Session Summaries
 
+### 2026-03-22T17:00Z — Phase 3: Per-Target EIF PoC Verification
+- Built PoC verification system: seller specifies target software (base image + pinned packages + config + PoC script), system builds a custom EIF with that exact software installed
+- **PoC Executor**: runs exploit scripts inside enclave with RLIMIT resource isolation (CPU, memory, process count, file size), captures exit code/stdout/stderr/signal, truncates output at 64KB
+- **Buyer Overlay**: buyer (e.g., intelligence agency) provides ECIES-encrypted file replacements (patched binaries). Enclave decrypts with ephemeral key, atomically replaces files, re-runs PoC. Seller never sees patches.
+- **Overlap detection**: if PoC works on unpatched AND patched → buyer's patches don't block it (genuinely new 0day). If PoC fails on patched → buyer already has coverage.
+- **Security validation**: base image whitelist, package name regex, config path restriction (/etc/ only), overlay path restriction (/usr/lib/ etc.), PoC script dangerous pattern detection, service command whitelist
+- **EIF Builder**: generates Dockerfile from TargetSpec, runs docker build + nitro-cli, caches by spec hash, returns PCR manifest
+- **Verification Orchestrator**: full lifecycle — launch per-target EIF → attest → deliver key → send PoC → optional overlay → receive signed result → terminate
+- Research finding: WASM NOT viable for real 0days (tested against 6 CVEs — Log4Shell, xz backdoor, PHP CGI, OpenSSH, FortiOS, HTTP/2). Only 1/6 could theoretically run in WASM. Architecture uses native execution instead.
+- 83 new tests, 616 total passing. No regressions.
+
 ### 2026-03-22T15:00Z — Zero-Day Vulnerability Marketplace
 - Built new "vuln" feature module alongside existing invention marketplace, reusing TEE infrastructure
 - **Shelf-life decay engine** (`shelf_life.py`): V(t) = V_0 * exp(-λt) * (1-P_patch) * exclusivity_premium, with per-category decay rates (browser=0.015, embedded=0.001, etc.)
