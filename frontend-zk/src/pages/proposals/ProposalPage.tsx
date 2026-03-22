@@ -12,6 +12,8 @@ interface Props {
 type Step = 1 | 2 | 3;
 type ScriptType = "bash" | "python3" | "html" | "powershell";
 
+const ALL_CAPABILITIES = ["ace", "lpe", "info_leak", "callback", "crash", "dos"];
+
 export function ProposalPage({ targetId }: Props) {
   const [target, setTarget] = useState<KnownTargetDetail | null>(null);
   const [badge, setBadge] = useState<BadgeStatus | null>(null);
@@ -39,9 +41,8 @@ export function ProposalPage({ targetId }: Props) {
       .then(([t, b]) => {
         setTarget(t);
         setBadge(b);
-        if (t.supported_capabilities && t.supported_capabilities.length > 0) {
-          setCapability(t.supported_capabilities[0]);
-        }
+        const caps = t.supported_capabilities?.length ? t.supported_capabilities : ALL_CAPABILITIES;
+        setCapability(caps[0]);
       })
       .catch((e) => setError(e.detail || "Failed to load target"))
       .finally(() => setLoading(false));
@@ -181,7 +182,7 @@ export function ProposalPage({ targetId }: Props) {
                 onChange={(e) => setCapability(e.target.value)}
                 className="w-full px-3 py-2 bg-white border-2 border-zk-border text-sm text-zk-text font-mono outline-none focus:border-zk-accent"
               >
-                {(target.supported_capabilities || []).map((cap) => (
+                {(target.supported_capabilities?.length ? target.supported_capabilities : ALL_CAPABILITIES).map((cap) => (
                   <option key={cap} value={cap}>
                     {cap}
                   </option>
