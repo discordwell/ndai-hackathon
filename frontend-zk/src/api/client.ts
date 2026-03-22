@@ -32,7 +32,12 @@ async function request<T>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new ApiError(res.status, body.detail || res.statusText);
+    const detail = typeof body.detail === "string"
+      ? body.detail
+      : Array.isArray(body.detail)
+      ? body.detail.map((e: any) => e.msg || JSON.stringify(e)).join("; ")
+      : res.statusText;
+    throw new ApiError(res.status, detail);
   }
 
   return res.json();
