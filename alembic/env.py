@@ -20,6 +20,8 @@ from ndai.models.zk_vulnerability import ZKVulnerability, ZKVulnAgreement, ZKVul
 from ndai.models.bounty import Bounty  # noqa: F401
 from ndai.models.rfp import BuyerRFP, RFPProposal  # noqa: F401
 from ndai.models.messaging import MessagingPrekey, MessagingOTPK, MessagingConversation, MessagingMessage  # noqa: F401
+from ndai.models.known_target import KnownTarget, TargetBuild  # noqa: F401
+from ndai.models.verification_proposal import VerificationProposal  # noqa: F401
 
 config = context.config
 
