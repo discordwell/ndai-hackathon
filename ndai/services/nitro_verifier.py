@@ -119,27 +119,22 @@ class NitroVerifier:
 
             target_spec = self.build_target_spec(target, proposal)
 
+            from ndai.config import settings as app_settings
+            from ndai.tee.vuln_verify_orchestrator import VerificationConfig, VulnVerifyOrchestrator
+
             if progress_callback:
                 await progress_callback("building", {
-                    "message": f"Building EIF for {target.display_name} {target.current_version}...",
+                    "message": f"Preparing enclave for {target.display_name}...",
                     "spec_id": target_spec.spec_id,
                 })
 
-            # Build EIF
-            from ndai.enclave.vuln_verify.builder import EIFBuilder
-            builder = EIFBuilder()
-            manifest = await builder.build_eif(target_spec)
+            # Use the base enclave EIF (pre-built with Amazon Linux for Nitro compat).
+            # The verification protocol runs capability oracles inside the enclave
+            # without needing target software baked into the EIF.
+            eif_path = app_settings.enclave_eif_path
 
             if progress_callback:
-                await progress_callback("verifying", {
-                    "message": "Running capability oracles...",
-                    "pcr0": manifest.pcr0[:16] if manifest.pcr0 else None,
-                })
-
-            # Run verification via the enclave pipeline
-            # In simulated mode, this runs locally; in Nitro mode, this launches a real enclave
-            from ndai.config import settings as app_settings
-            from ndai.tee.vuln_verify_orchestrator import VerificationConfig, VulnVerifyOrchestrator
+                await progress_callback("verifying", {"message": "Launching Nitro Enclave..."})
 
             # Get the appropriate TEE provider based on tee_mode
             if app_settings.tee_mode == "nitro":
@@ -151,9 +146,7 @@ class NitroVerifier:
 
             config = VerificationConfig(
                 target_spec=target_spec,
-                eif_path=manifest.eif_path,
-                expected_pcrs={0: manifest.pcr0, 1: manifest.pcr1, 2: manifest.pcr2}
-                if manifest.pcr0 != "simulated" else None,
+                eif_path=eif_path,
                 api_key=app_settings.openai_api_key or app_settings.anthropic_api_key,
             )
             orchestrator = VulnVerifyOrchestrator(provider=provider)

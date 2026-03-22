@@ -73,17 +73,19 @@ FROM {spec.base_image} AS target
 # Service setup
 {service_setup}
 
-# --- Enclave runtime layer ---
-FROM target AS enclave
+# --- Enclave runtime layer (must use amazonlinux for Nitro compatibility) ---
+FROM amazonlinux:2023 AS enclave
 
-# Install Python runtime for NDAI enclave app
-RUN apt-get update && apt-get install -y --no-install-recommends \\
-    python3 python3-pip python3-venv ca-certificates curl \\
-    && rm -rf /var/lib/apt/lists/*
+# Install Python 3.11 runtime and target software dependencies
+RUN dnf install -y python3.11 python3.11-pip ca-certificates shadow-utils \\
+    && dnf clean all
+
+# Copy target software from build stage
+COPY --from=target / /target-root/
 
 # Install NDAI enclave runtime
 COPY requirements-enclave.txt /tmp/
-RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements-enclave.txt \\
+RUN pip3.11 install --no-cache-dir -r /tmp/requirements-enclave.txt \\
     && rm /tmp/requirements-enclave.txt
 
 # Copy NDAI source
@@ -97,7 +99,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 
-ENTRYPOINT ["python3", "-m", "ndai.enclave.app"]
+ENTRYPOINT ["python3.11", "-m", "ndai.enclave.app"]
 """
 
     def spec_hash(self, spec: TargetSpec) -> str:

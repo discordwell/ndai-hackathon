@@ -108,13 +108,27 @@ class NitroEnclaveProvider(TEEProvider):
         self._close_connection(enclave_id)
 
         loop = asyncio.get_event_loop()
-        sock = socket.socket(AF_VSOCK, socket.SOCK_STREAM)
-        sock.settimeout(300)  # 5 min timeout for negotiations
+
+        # Retry vsock connect with backoff — enclave needs time to boot
+        max_retries = 30
+        for attempt in range(max_retries):
+            sock = socket.socket(AF_VSOCK, socket.SOCK_STREAM)
+            sock.settimeout(10)  # Short timeout for connect attempts
+            try:
+                await loop.run_in_executor(
+                    None, sock.connect, (identity.enclave_cid, config.vsock_port)
+                )
+                sock.settimeout(300)  # Increase to 5 min for data transfer
+                break  # Connected
+            except (ConnectionRefusedError, OSError) as e:
+                sock.close()
+                if attempt == max_retries - 1:
+                    raise
+                logger.info("Enclave not ready (attempt %d/%d): %s",
+                            attempt + 1, max_retries, e)
+                await asyncio.sleep(3)
 
         try:
-            await loop.run_in_executor(
-                None, sock.connect, (identity.enclave_cid, config.vsock_port)
-            )
             data = json.dumps(message).encode()
             frame = struct.pack(">I", len(data)) + data
             await loop.run_in_executor(None, sock.sendall, frame)

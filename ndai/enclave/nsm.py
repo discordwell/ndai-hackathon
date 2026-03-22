@@ -133,19 +133,14 @@ class NSMDevice:
     def _ioctl_request(self, request_cbor: bytes) -> bytes:
         """Send a CBOR request to the NSM device via ioctl.
 
-        TODO(hardware-validation): This buffer layout must be validated against
-        the actual NSM kernel driver on real Nitro hardware. The real driver
-        uses a struct nsm_message with iovec-like pointer fields, not a flat
-        buffer. The ioctl command number computation also needs to match the
-        driver's sizeof(struct nsm_message). Validate against aws-nitro-enclaves-
-        sdk-c (nsm-lib) or the Rust aws-nitro-enclaves-nsm-api crate before
-        deploying to production.
+        The NSM kernel driver expects struct nsm_message with two iovec fields:
+            struct nsm_message {
+                struct iovec request;   // {void *iov_base, size_t iov_len}
+                struct iovec response;  // {void *iov_base, size_t iov_len}
+            };
 
-        Current layout (needs hardware verification):
-            - 4 bytes: request length (little-endian u32)
-            - 4 bytes: response length (little-endian u32)
-            - request_cbor bytes
-            - response buffer (pre-allocated)
+        On 64-bit: sizeof(struct iovec) = 16, sizeof(struct nsm_message) = 32.
+        The ioctl command is _IOWR(0x0A, 0, struct nsm_message).
 
         Returns:
             Raw CBOR response bytes.
@@ -156,43 +151,49 @@ class NSMDevice:
         if req_len > NSM_REQUEST_MAX_SIZE:
             raise NSMError(f"NSM request too large: {req_len} bytes (max {NSM_REQUEST_MAX_SIZE})")
 
-        # Build the ioctl buffer:
-        # [req_len:u32][resp_max:u32][request_data][response_buffer]
-        buf = bytearray(8 + req_len + NSM_RESPONSE_MAX_SIZE)
-        struct.pack_into("<I", buf, 0, req_len)
-        struct.pack_into("<I", buf, 4, NSM_RESPONSE_MAX_SIZE)
-        buf[8 : 8 + req_len] = request_cbor
+        # Allocate request and response buffers as ctypes arrays
+        req_buf = (ctypes.c_char * req_len)(*request_cbor)
+        resp_buf = (ctypes.c_char * NSM_RESPONSE_MAX_SIZE)()
 
-        # Convert to ctypes buffer for ioctl
-        c_buf = (ctypes.c_char * len(buf)).from_buffer(buf)
+        # Build struct nsm_message: two iovecs (pointer + length each)
+        # struct iovec { void *iov_base; size_t iov_len; };
+        # On 64-bit: each field is 8 bytes → iovec is 16 bytes → nsm_message is 32 bytes
+        class Iovec(ctypes.Structure):
+            _fields_ = [("iov_base", ctypes.c_void_p), ("iov_len", ctypes.c_size_t)]
+
+        class NsmMessage(ctypes.Structure):
+            _fields_ = [("request", Iovec), ("response", Iovec)]
+
+        msg = NsmMessage()
+        msg.request.iov_base = ctypes.cast(req_buf, ctypes.c_void_p)
+        msg.request.iov_len = req_len
+        msg.response.iov_base = ctypes.cast(resp_buf, ctypes.c_void_p)
+        msg.response.iov_len = NSM_RESPONSE_MAX_SIZE
 
         try:
-            fcntl.ioctl(self._fd, self._ioctl_cmd(), c_buf)
+            fcntl.ioctl(self._fd, self._ioctl_cmd(), msg)
         except OSError as exc:
             raise NSMError(f"NSM ioctl failed: {exc}") from exc
 
-        # Parse response length from the buffer (updated by the kernel)
-        resp_len = struct.unpack_from("<I", buf, 4)[0]
+        # After ioctl, response.iov_len is updated to actual response size
+        resp_len = msg.response.iov_len
         if resp_len == 0:
             raise NSMError("NSM returned empty response")
         if resp_len > NSM_RESPONSE_MAX_SIZE:
             raise NSMError(f"NSM response too large: {resp_len}")
 
-        response_start = 8 + req_len
-        return bytes(buf[response_start : response_start + resp_len])
+        return bytes(resp_buf[:resp_len])
 
     @staticmethod
     def _ioctl_cmd() -> int:
         """Compute the ioctl command number for NSM.
 
-        Uses _IOWR macro: direction=3 (read+write), type=magic, nr=cmd, size
+        _IOWR(NSM_IOCTL_MAGIC, NSM_CMD_ATTESTATION, struct nsm_message)
+        sizeof(struct nsm_message) = 32 on 64-bit (two iovecs)
+        Linux ioctl encoding: direction(2) | size(14) | type(8) | nr(8)
         """
-        # _IOWR(NSM_IOCTL_MAGIC, NSM_CMD_ATTESTATION, struct nsm_message)
-        # Linux ioctl encoding: direction(2) | size(14) | type(8) | nr(8)
         direction = 3  # _IOC_READ | _IOC_WRITE
-        size = 8 + NSM_REQUEST_MAX_SIZE + NSM_RESPONSE_MAX_SIZE
-        # Clamp size to 14-bit field
-        size = size & 0x3FFF
+        size = 32  # sizeof(struct nsm_message) on 64-bit
         return (direction << 30) | (size << 16) | (NSM_IOCTL_MAGIC << 8) | NSM_CMD_ATTESTATION
 
     def _parse_attestation_response(self, response_cbor: bytes) -> bytes:

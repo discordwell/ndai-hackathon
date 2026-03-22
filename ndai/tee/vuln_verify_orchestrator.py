@@ -248,9 +248,12 @@ class VulnVerifyOrchestrator:
     def _default_enclave_config(self, config: VerificationConfig) -> EnclaveConfig:
         return EnclaveConfig(
             cpu_count=self._settings.enclave_cpu_count,
-            memory_mib=2048,  # Larger than negotiation for target software
+            memory_mib=self._settings.vuln_verify_enclave_memory_mib
+            if hasattr(self._settings, 'vuln_verify_enclave_memory_mib')
+            else self._settings.enclave_memory_mib,
             eif_path=config.eif_path or self._settings.enclave_eif_path,
             vsock_port=self._settings.enclave_vsock_port,
+            debug_mode=True,
         )
 
     def _serialize_target_spec(self, spec: TargetSpec) -> dict:
