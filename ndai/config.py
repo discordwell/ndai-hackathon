@@ -81,5 +81,21 @@ class Settings(BaseSettings):
     vuln_overlay_max_size_mb: int = 500
     vuln_verify_enclave_memory_mib: int = 2048
 
+    # Known Targets & Verification Proposals
+    known_targets_enabled: bool = True
+    verification_deposit_address: str = ""  # VerificationDeposit.sol contract address
+    target_update_interval_hours: int = 6
+
+    # Windows verification (EC2 VM path)
+    windows_ami_id: str = ""  # Windows Server 2022 AMI
+    windows_instance_type: str = "m5.large"
+    windows_ssm_timeout_sec: int = 900  # 15 min max
+    windows_subnet_id: str = ""
+    windows_security_group_id: str = ""
+
+    # iOS verification (Corellium)
+    corellium_api_key: str = ""
+    corellium_api_url: str = "https://app.corellium.com/api"
+
 
 settings = Settings()

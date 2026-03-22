@@ -1,6 +1,7 @@
 import React from "react";
 import type { VulnListingResponse } from "../../api/types";
 import { SeverityMeter } from "./SeverityMeter";
+import { BadgeIndicator } from "../badges/BadgeIndicator";
 
 const IMPACT_STYLES: Record<string, string> = {
   RCE: "bg-danger-500/20 text-danger-400 border-danger-500/30",
@@ -12,10 +13,11 @@ const IMPACT_STYLES: Record<string, string> = {
 interface Props {
   listing: VulnListingResponse;
   selected?: boolean;
+  seller_has_badge?: boolean;
   onClick?: () => void;
 }
 
-export function ListingCard({ listing, selected, onClick }: Props) {
+export function ListingCard({ listing, selected, seller_has_badge = false, onClick }: Props) {
   return (
     <div
       onClick={onClick}
@@ -27,8 +29,9 @@ export function ListingCard({ listing, selected, onClick }: Props) {
     >
       <div className="flex items-start justify-between mb-3">
         <div>
-          <h3 className="font-semibold text-white text-sm">
+          <h3 className="font-semibold text-white text-sm flex items-center gap-1.5">
             {listing.target_software}
+            <BadgeIndicator hasBadge={seller_has_badge} size="sm" />
           </h3>
           <p className="text-xs text-gray-500 mt-0.5 font-mono">
             {listing.vulnerability_class}

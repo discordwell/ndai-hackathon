@@ -12,6 +12,11 @@ import { ListingDetailPage } from "../pages/marketplace/ListingDetailPage";
 import { SubmitVulnPage } from "../pages/submit/SubmitVulnPage";
 import { DealsListPage } from "../pages/deals/DealsListPage";
 import { DealPage } from "../pages/deals/DealPage";
+import { TargetsPage } from "../pages/targets/TargetsPage";
+import { TargetDetailPage } from "../pages/targets/TargetDetailPage";
+import { MyProposalsPage } from "../pages/proposals/MyProposalsPage";
+import { ProposalPage } from "../pages/proposals/ProposalPage";
+import { ProposalStatusPage } from "../pages/proposals/ProposalStatusPage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -58,6 +63,30 @@ export function Router() {
   const dealMatch = path.match(/^\/deals\/([^/]+)$/);
   if (dealMatch)
     return <RequireAuth><AppLayout><DealPage dealId={dealMatch[1]} /></AppLayout></RequireAuth>;
+
+  // Targets
+  if (path === "/targets")
+    return <RequireAuth><AppLayout><TargetsPage /></AppLayout></RequireAuth>;
+
+  const targetMatch = path.match(/^\/targets\/([^/]+)$/);
+  if (targetMatch)
+    return <RequireAuth><AppLayout><TargetDetailPage targetId={targetMatch[1]} /></AppLayout></RequireAuth>;
+
+  // Proposals
+  if (path === "/proposals")
+    return <RequireAuth><AppLayout><MyProposalsPage /></AppLayout></RequireAuth>;
+
+  // New proposal with target query param: #/proposals/new?target=xxx
+  const newProposalMatch = path.match(/^\/proposals\/new/);
+  if (newProposalMatch) {
+    const params = new URLSearchParams(path.split("?")[1] || "");
+    const targetId = params.get("target") || "";
+    return <RequireAuth><AppLayout><ProposalPage targetId={targetId} /></AppLayout></RequireAuth>;
+  }
+
+  const proposalMatch = path.match(/^\/proposals\/([^/?]+)$/);
+  if (proposalMatch)
+    return <RequireAuth><AppLayout><ProposalStatusPage proposalId={proposalMatch[1]} /></AppLayout></RequireAuth>;
 
   // 404
   return (

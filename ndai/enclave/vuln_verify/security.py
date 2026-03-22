@@ -34,6 +34,10 @@ ALLOWED_BASE_IMAGES = frozenset({
     "debian:12",
     "amazonlinux:2",
     "amazonlinux:2023",
+    # Browser targets (headless Chrome/Firefox)
+    "chromium/headless-shell:latest",
+    "selenium/standalone-chrome:latest",
+    "selenium/standalone-firefox:latest",
 })
 
 # apt package name: lowercase alphanumeric, dots, plus, hyphens
@@ -218,8 +222,8 @@ def _validate_poc(poc: PoCSpec) -> list[str]:
     """Validate the PoC script."""
     errors: list[str] = []
 
-    if poc.script_type not in ("bash", "python3"):
-        errors.append(f"Invalid PoC script type: '{poc.script_type}' (must be 'bash' or 'python3')")
+    if poc.script_type not in ("bash", "python3", "html"):
+        errors.append(f"Invalid PoC script type: '{poc.script_type}' (must be 'bash', 'python3', or 'html')")
 
     if len(poc.script_content.encode("utf-8")) > MAX_POC_SCRIPT_SIZE:
         errors.append(f"PoC script too large: > {MAX_POC_SCRIPT_SIZE} bytes")

@@ -281,6 +281,79 @@ Browser ↔ SSE (per-player filtered) + REST → FastAPI → Enclave (poker engi
 - **Settlement**: On-chain zero-sum enforcement. Sequential hand numbering prevents replay.
 - **Card filtering**: Parent receives `player_hands` dict from enclave, distributes each player's cards only to their SSE stream.
 
+## Known Targets + Verification Proposals + Anti-Spam Escrow
+
+Platform-maintained catalog of verification targets with anti-spam deposit escrow and reputation badges.
+
+### Architecture
+
+```
+Seller browses Known Targets -> picks Chrome 124 -> writes PoC
+    |
+Has ⚡ badge? --yes--> Queue verification immediately
+    |no
+    v
+Deposit $100 ETH to VerificationDeposit.sol -> confirm tx -> Queue verification
+    |
+Dispatcher routes by platform:
+  |-- Linux (Chrome/Firefox/Ubuntu) -> Nitro Enclave (pre-built EIF + inject PoC)
+  |-- Windows -> Fresh EC2 Windows VM via SSM
+  '-- iOS -> Manual review (Corellium added when demand exists)
+    |
+Capability oracle runs -> CapabilityResult
+    |
+Pass? -> Refund deposit + Award ⚡ badge + Auto-create ZKVulnerability listing
+Fail? -> Forfeit deposit to platform
+```
+
+### Components
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| Known Targets | `ndai/models/known_target.py` | Platform-maintained target catalog (Chrome, Firefox, Ubuntu, Windows, iOS) |
+| Verification Proposals | `ndai/models/verification_proposal.py` | Seller PoC submissions against known targets |
+| Target Catalog API | `ndai/api/routers/targets.py` | Browse available targets |
+| Proposal API | `ndai/api/routers/proposals.py` | Submit, deposit, trigger, and stream verification |
+| Badge API | `ndai/api/routers/badges.py` | Purchase or check ⚡ badge status |
+| Verification Dispatcher | `ndai/services/verification_dispatcher.py` | Routes proposals to correct backend (Nitro/EC2/Corellium) |
+| Nitro Verifier | `ndai/services/nitro_verifier.py` | Linux verification via pre-built EIF + capability oracles |
+| Browser Executor | `ndai/enclave/vuln_verify/browser_executor.py` | Headless Chrome/Firefox PoC executor |
+| Windows Verifier | `ndai/services/windows_verifier.py` | EC2 Windows VM verification via SSM |
+| iOS Verifier | `ndai/services/ios_verifier.py` | Corellium stub (manual review) |
+| Target Auto-Updater | `ndai/services/target_updater.py` | Cron-based version feed checker |
+| VerificationDeposit.sol | `contracts/src/VerificationDeposit.sol` | On-chain escrow ($100 deposit, badge purchase) |
+| Frontend | `zdayzk-frontend/src/pages/targets/`, `proposals/` | Target browsing, PoC submission, verification progress |
+
+### Anti-Spam: VerificationDeposit.sol
+
+Single contract (not factory) managing deposits for all proposals. Badge holders skip deposits.
+
+- `deposit(proposalId)` -- $100 ETH escrow per verification run
+- `refund(proposalId)` -- Operator refunds if PoC passes capability oracle
+- `forfeit(proposalId)` -- Operator forfeits if PoC fails (funds go to platform)
+- `purchaseBadge()` -- One-time $100 for permanent ⚡ badge
+- `grantBadge(seller)` -- Operator awards badge after first successful verification
+
+### Known Target Catalog
+
+5 pre-seeded targets with platform-specific verification methods:
+
+| Target | Platform | Method | Escrow | PoC Type |
+|--------|----------|--------|--------|----------|
+| Chrome (Linux) | linux | Nitro Enclave | $100 | HTML |
+| Firefox (Linux) | linux | Nitro Enclave | $100 | HTML |
+| Ubuntu LTS | linux | Nitro Enclave | $100 | Bash |
+| Windows Server 2022 | windows | EC2 VM + SSM | $100 | PowerShell |
+| iOS (Latest) | ios | Manual/Corellium | $500 | Manual |
+
+### Auto-Update
+
+Feed checkers poll upstream release APIs every 6 hours:
+- Chrome: Chromium Dashboard API
+- Firefox: Mozilla product-details
+- Ubuntu: Launchpad API
+- Windows/iOS: Manual updates
+
 ## CVE-2024-3094 Demo (Hackathon PoC)
 
 End-to-end demonstration of the 0day marketplace using the XZ Utils backdoor as showcase.

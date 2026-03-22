@@ -3,8 +3,10 @@ import { useAuth } from "../contexts/AuthContext";
 
 const navItems = [
   { label: "Dashboard", hash: "#/dashboard", icon: GridIcon },
+  { label: "Targets", hash: "#/targets", icon: TargetIcon },
   { label: "Marketplace", hash: "#/marketplace", icon: StoreIcon },
   { label: "Submit", hash: "#/submit", icon: PlusIcon },
+  { label: "Proposals", hash: "#/proposals", icon: ClipboardIcon },
   { label: "My Deals", hash: "#/deals", icon: HandshakeIcon },
 ];
 
@@ -290,6 +292,42 @@ function CloseIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
         d="M6 18L18 6M6 6l12 12"
+      />
+    </svg>
+  );
+}
+
+function TargetIcon({ active }: { active: boolean }) {
+  return (
+    <svg
+      className={`w-4 h-4 ${active ? "text-accent-400" : "text-white/40"}`}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0-6C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 2a8 8 0 110 16 8 8 0 010-16z"
+      />
+    </svg>
+  );
+}
+
+function ClipboardIcon({ active }: { active: boolean }) {
+  return (
+    <svg
+      className={`w-4 h-4 ${active ? "text-accent-400" : "text-white/40"}`}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
       />
     </svg>
   );

@@ -15,6 +15,8 @@ from ndai.models.zk_identity import VulnIdentity
 from ndai.models.zk_vulnerability import ZKVulnerability, ZKVulnAgreement, ZKVulnOutcome
 from ndai.models.bounty import Bounty
 from ndai.models.messaging import MessagingPrekey, MessagingOTPK, MessagingConversation, MessagingMessage
+from ndai.models.known_target import KnownTarget, TargetBuild
+from ndai.models.verification_proposal import VerificationProposal
 
 __all__ = [
     "Base",
@@ -48,4 +50,7 @@ __all__ = [
     "MessagingOTPK",
     "MessagingConversation",
     "MessagingMessage",
+    "KnownTarget",
+    "TargetBuild",
+    "VerificationProposal",
 ]

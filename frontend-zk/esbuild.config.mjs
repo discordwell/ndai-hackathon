@@ -22,6 +22,20 @@ function copyHTML() {
   );
 }
 
+// Stub Node.js built-ins for browser (argon2-browser's Emscripten references fs/path)
+const nodeStubPlugin = {
+  name: "node-builtins-stub",
+  setup(build) {
+    build.onResolve({ filter: /^(fs|path|crypto)$/ }, (args) => ({
+      path: args.path,
+      namespace: "node-stub",
+    }));
+    build.onLoad({ filter: /.*/, namespace: "node-stub" }, () => ({
+      contents: "module.exports = {};",
+    }));
+  },
+};
+
 const buildOptions = {
   entryPoints: ["src/main.tsx"],
   bundle: true,
@@ -34,10 +48,13 @@ const buildOptions = {
   loader: {
     ".tsx": "tsx",
     ".ts": "ts",
+    ".wasm": "file",
   },
   define: {
     "process.env.NODE_ENV": isWatch ? '"development"' : '"production"',
+    "global": "globalThis",
   },
+  plugins: [nodeStubPlugin],
 };
 
 if (isWatch) {

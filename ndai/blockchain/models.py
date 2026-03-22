@@ -51,3 +51,16 @@ class VulnDealState:
     is_patched: bool
     state: VulnEscrowState
     balance_wei: int
+
+
+class VerificationDepositState(IntEnum):
+    Active = 0
+    Refunded = 1
+    Forfeited = 2
+
+
+@dataclass
+class DepositInfo:
+    seller: str
+    amount: int
+    settled: bool

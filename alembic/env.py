@@ -19,6 +19,7 @@ from ndai.models.zk_identity import VulnIdentity  # noqa: F401
 from ndai.models.zk_vulnerability import ZKVulnerability, ZKVulnAgreement, ZKVulnOutcome  # noqa: F401
 from ndai.models.bounty import Bounty  # noqa: F401
 from ndai.models.rfp import BuyerRFP, RFPProposal  # noqa: F401
+from ndai.models.messaging import MessagingPrekey, MessagingOTPK, MessagingConversation, MessagingMessage  # noqa: F401
 
 config = context.config
 

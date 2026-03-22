@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from ndai.api.routers import agreements, auth, bounties, inventions, messaging, negotiations, poker, rfps, secrets, transcripts, vulns, vuln_verify, vuln_demo, delivery, zk_auth, zk_vulns
+from ndai.api.routers import agreements, auth, badges, bounties, inventions, messaging, negotiations, poker, proposals, rfps, secrets, targets, transcripts, vulns, vuln_verify, vuln_demo, delivery, zk_auth, zk_vulns
 
 _frontend_override = os.environ.get("FRONTEND_DIR", "")
 FRONTEND_DIST = Path(_frontend_override) if _frontend_override else Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
@@ -68,6 +68,9 @@ def create_app() -> FastAPI:
     app.include_router(zk_vulns.router, prefix="/api/v1/zk-vulns", tags=["zk-vulnerabilities"])
     app.include_router(bounties.router, prefix="/api/v1/bounties", tags=["bounties"])
     app.include_router(messaging.router, prefix="/api/v1/messaging", tags=["messaging"])
+    app.include_router(targets.router, prefix="/api/v1/targets", tags=["targets"])
+    app.include_router(proposals.router, prefix="/api/v1/proposals", tags=["proposals"])
+    app.include_router(badges.router, prefix="/api/v1/badges", tags=["badges"])
 
     @app.get("/health")
     async def health():

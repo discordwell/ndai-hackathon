@@ -2,6 +2,22 @@
 
 ## Session Summaries
 
+### 2026-03-23T18:00Z — Known Targets + Verification Proposals + Anti-Spam Escrow + Badge System
+- Built the AWS compute flow: platform-maintained target catalog, anti-spam deposit escrow, and ⚡ reputation badges
+- **Known Targets**: 5 pre-seeded targets (Chrome, Firefox, Ubuntu, Windows, iOS) with platform-specific verification methods (Nitro Enclave for Linux, EC2 VM for Windows, Corellium stub for iOS)
+- **Verification Proposals**: Seller browses targets, writes PoC, deposits $100 ETH (or skips with ⚡ badge), triggers verification. On pass: deposit refunded, badge awarded, auto-creates ZKVulnerability listing
+- **Anti-spam escrow**: VerificationDeposit.sol — single contract managing per-proposal deposits with deposit/refund/forfeit + badge purchase/grant. 12 forge tests passing
+- **⚡ Badge system**: Two ways to earn — pay $100 on-chain (permanent, one-time) OR earn via first successful verification. Badge holders skip all future escrow deposits
+- **Verification dispatcher**: Routes proposals to Nitro (Linux), EC2 Windows VM (SSM), or Corellium stub (iOS) based on target.verification_method
+- **Browser executor**: Headless Chrome/Firefox PoC executor — serves exploit HTML on localhost, browser navigates to it, capability oracles check for canary retrieval
+- **Auto-update service**: Cron-based feed checkers for Chrome (Chromium Dashboard API), Firefox (Mozilla product-details), Ubuntu (Launchpad). Auto-detects new versions, triggers EIF rebuilds
+- **Frontend**: TargetsPage (responsive grid), TargetDetailPage, ProposalPage (3-step wizard: PoC editor → escrow deposit → verify), ProposalStatusPage (SSE progress), MyProposalsPage, BadgeIndicator ⚡
+- **Data layer**: KnownTarget, TargetBuild, VerificationProposal ORM models + Alembic migration with 5 seed targets + badge columns on VulnIdentity
+- **New files**: ~40 files across models, routers, schemas, services, contracts, frontend pages/components, tests
+- **Tests**: 781 Python unit tests passing, 92 Solidity tests passing (2 pre-existing failures in PokerTableFactory), zdayzk frontend builds clean
+- iOS: higher escrow ($500), manual review stub. Admin provisions Corellium device when demand exists
+- Windows: EC2 VM path via boto3 + SSM. Trust model is weaker (no enclave attestation) — disclosed on target page
+
 ### 2026-03-23T15:00Z — E2E Encrypted Messaging: Signal Protocol (X3DH + Double Ratchet)
 - Built E2E encrypted messaging for zdayzk.com — both deal-scoped chat and platform-wide DMs
 - **Signal protocol**: Full X3DH key agreement (4 DH computations, HKDF, ephemeral keys) + Double Ratchet (~400 LOC) with forward secrecy, skipped message keys (max 100), AES-256-GCM per message
