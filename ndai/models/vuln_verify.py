@@ -46,10 +46,11 @@ class VerificationResultRecord(Base):
     spec_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("vuln_target_specs.id"), nullable=False)
     agreement_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("vuln_agreements.id"), nullable=False)
     buyer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    unpatched_exit_code: Mapped[int | None] = mapped_column(Integer)
-    unpatched_matches: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    patched_exit_code: Mapped[int | None] = mapped_column(Integer)
-    patched_matches: Mapped[bool | None] = mapped_column(Boolean)
+    claimed_capability: Mapped[str | None] = mapped_column(String(20))  # ace, lpe, etc.
+    verified_level: Mapped[str | None] = mapped_column(String(20))
+    reliability_score: Mapped[float | None] = mapped_column(Float)
+    unpatched_result: Mapped[dict | None] = mapped_column(JSONB)  # CapabilityResult as dict
+    patched_result: Mapped[dict | None] = mapped_column(JSONB)
     overlap_detected: Mapped[bool | None] = mapped_column(Boolean)
     verification_chain_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     attestation_pcr0: Mapped[str | None] = mapped_column(String(200))

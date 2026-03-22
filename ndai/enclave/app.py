@@ -439,6 +439,7 @@ def _handle_vuln_verify(request: dict[str, Any]) -> dict[str, Any]:
     """Run PoC verification against the target software in this enclave."""
     try:
         from ndai.enclave.vuln_verify.models import (
+            CapabilityLevel, ClaimedCapability,
             ConfigFile, ExpectedOutcome, PinnedPackage, PoCSpec, ServiceSpec, TargetSpec,
         )
         from ndai.enclave.vuln_verify.overlay_handler import OverlayHandler
@@ -447,6 +448,7 @@ def _handle_vuln_verify(request: dict[str, Any]) -> dict[str, Any]:
 
         data = request.get("data", request)
         spec_data = data.get("target_spec", {})
+        cap_data = spec_data.get("claimed_capability", {"level": "crash"})
 
         spec = TargetSpec(
             spec_id=spec_data.get("spec_id", ""),
@@ -455,7 +457,13 @@ def _handle_vuln_verify(request: dict[str, Any]) -> dict[str, Any]:
             config_files=[ConfigFile(**c) for c in spec_data.get("config_files", [])],
             services=[ServiceSpec(**s) for s in spec_data.get("services", [])],
             poc=PoCSpec(**spec_data.get("poc", {"script_type": "bash", "script_content": "true"})),
-            expected_outcome=ExpectedOutcome(**spec_data.get("expected_outcome", {})),
+            claimed_capability=ClaimedCapability(
+                level=CapabilityLevel(cap_data.get("level", "crash")),
+                crash_signal=cap_data.get("crash_signal"),
+                exit_code=cap_data.get("exit_code"),
+                reliability_runs=cap_data.get("reliability_runs", 3),
+            ),
+            service_user=spec_data.get("service_user", "www-data"),
         )
 
         # Validate inside the enclave (defense in depth — parent already validated)
@@ -474,11 +482,25 @@ def _handle_vuln_verify(request: dict[str, Any]) -> dict[str, Any]:
         # Clear overlay after use
         _state.pending_overlay = None
 
-        # Only safe fields leave the enclave
+        # Only capability assessments leave — no stdout/stderr
+        def _cap_to_dict(cap):
+            return {
+                "claimed": cap.claimed.value,
+                "verified_level": cap.verified_level.value if cap.verified_level else None,
+                "ace_canary_found": cap.ace_canary_found,
+                "lpe_canary_found": cap.lpe_canary_found,
+                "info_canary_found": cap.info_canary_found,
+                "callback_received": cap.callback_received,
+                "crash_detected": cap.crash_detected,
+                "dos_detected": cap.dos_detected,
+                "reliability_score": cap.reliability_score,
+                "reliability_runs": cap.reliability_runs,
+            }
+
         safe_result = {
             "spec_id": result.spec_id,
-            "unpatched_matches": result.unpatched_matches_expected,
-            "patched_matches": result.patched_matches_expected,
+            "unpatched_capability": _cap_to_dict(result.unpatched_capability),
+            "patched_capability": _cap_to_dict(result.patched_capability) if result.patched_capability else None,
             "overlap_detected": result.overlap_detected,
             "verification_chain_hash": result.verification_chain_hash,
             "timestamp": result.timestamp,

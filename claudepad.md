@@ -2,6 +2,14 @@
 
 ## Session Summaries
 
+### 2026-03-22T19:00Z — Capability Oracles: Proof-of-Exploitation
+- Replaced crash-based verification with capability oracle system
+- **Oracle types**: ACE (canary readable by service user), LPE (canary root-only), Info Leak (canary in process memory), Callback (TCP listener), Crash (signal detection), DoS (health check failure)
+- **Key principle**: enclave generates random canaries, seller's PoC must retrieve them. Seller doesn't define success — enclave independently verifies the claim.
+- **Reliability scoring**: PoC runs N times with service restarts between runs to randomize heap/ASLR. Reports success rate (e.g., "ACE verified, reliability 2/3").
+- **Capability downgrading**: if seller claims ACE but only crashes, result shows "claimed: ACE, verified: CRASH" — buyer sees what the exploit actually achieves vs what was claimed.
+- 108 verification tests, 641 total passing. No regressions.
+
 ### 2026-03-22T17:00Z — Phase 3: Per-Target EIF PoC Verification
 - Built PoC verification system: seller specifies target software (base image + pinned packages + config + PoC script), system builds a custom EIF with that exact software installed
 - **PoC Executor**: runs exploit scripts inside enclave with RLIMIT resource isolation (CPU, memory, process count, file size), captures exit code/stdout/stderr/signal, truncates output at 64KB

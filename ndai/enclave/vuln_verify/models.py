@@ -8,6 +8,7 @@ Both must be validated before use.
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from uuid import uuid4
 
 
@@ -48,13 +49,59 @@ class PoCSpec:
     run_as_user: str = "poc"  # non-root user for PoC execution
 
 
+class CapabilityLevel(Enum):
+    """What a 0day exploit can achieve, ordered by value."""
+    CRASH = "crash"           # Target process terminates (lowest value)
+    DOS = "dos"               # Target becomes unresponsive
+    INFO_LEAK = "info_leak"   # Exploit reads inaccessible data
+    ACE = "ace"               # Arbitrary code execution as service user
+    LPE = "lpe"               # Local privilege escalation (service → root)
+    CALLBACK = "callback"     # Blind RCE (triggers outbound connection)
+
+
+@dataclass(frozen=True)
+class ClaimedCapability:
+    """What the seller claims their exploit can do.
+
+    The enclave independently verifies this claim using oracles.
+    The seller does NOT define what success looks like — they only
+    declare the capability level. The enclave generates the challenge.
+    """
+    level: CapabilityLevel
+    # Legacy crash fields (only used when level=CRASH)
+    crash_signal: int | None = None
+    exit_code: int | None = None
+    # Reliability: how many times to run the PoC
+    reliability_runs: int = 3
+
+
+@dataclass(frozen=True)
+class CapabilityResult:
+    """Enclave-verified capability assessment.
+
+    This is what the buyer sees. It answers: "What can this exploit
+    actually do?" not just "did it crash?"
+    """
+    claimed: CapabilityLevel
+    verified_level: CapabilityLevel | None  # Highest level confirmed, or None
+    ace_canary_found: bool = False
+    lpe_canary_found: bool = False
+    info_canary_found: bool = False
+    callback_received: bool = False
+    crash_detected: bool = False
+    dos_detected: bool = False
+    reliability_score: float = 0.0   # successes / attempts
+    reliability_runs: int = 1
+
+
+# Keep ExpectedOutcome for backward compatibility but mark as legacy
 @dataclass(frozen=True)
 class ExpectedOutcome:
-    """What a successful PoC execution looks like."""
-    exit_code: int | None = None       # expected exit code, or None for any
-    stdout_contains: str | None = None # substring expected in stdout
-    stderr_contains: str | None = None # substring expected in stderr
-    crash_signal: int | None = None    # expected signal (e.g., 11 for SIGSEGV)
+    """Legacy: What a successful PoC execution looks like. Use ClaimedCapability instead."""
+    exit_code: int | None = None
+    stdout_contains: str | None = None
+    stderr_contains: str | None = None
+    crash_signal: int | None = None
 
 
 @dataclass(frozen=True)
@@ -74,7 +121,11 @@ class TargetSpec:
     config_files: list[ConfigFile]
     services: list[ServiceSpec]
     poc: PoCSpec
-    expected_outcome: ExpectedOutcome
+    claimed_capability: ClaimedCapability
+    # Service user that the target runs as (for oracle permission setup)
+    service_user: str = "www-data"
+    # Legacy field, kept for backward compat
+    expected_outcome: ExpectedOutcome = field(default_factory=ExpectedOutcome)
 
 
 # ---------------------------------------------------------------------------
@@ -128,18 +179,18 @@ class PoCResult:
 class VerificationResult:
     """Attestation-signed verification output.
 
-    This is what leaves the enclave. Note: stdout/stderr do NOT leave —
-    only booleans and the chain hash. This prevents information leakage
-    about both the vulnerability details and the buyer's overlay.
+    This is what leaves the enclave. stdout/stderr do NOT leave —
+    only capability assessments and the chain hash.
+
+    The buyer sees: "ACE verified, reliability 9/10, LPE not achieved"
+    instead of just "crash confirmed."
     """
     spec_id: str
-    unpatched_result: PoCResult
-    unpatched_matches_expected: bool
-    patched_result: PoCResult | None       # None if no overlay provided
-    patched_matches_expected: bool | None
-    overlap_detected: bool | None          # True if PoC works on patched target too
-    verification_chain_hash: str           # SHA-256 final hash from event chain
-    timestamp: str                         # ISO 8601
+    unpatched_capability: CapabilityResult    # What was verified on unpatched target
+    patched_capability: CapabilityResult | None  # What was verified on patched target
+    overlap_detected: bool | None             # True if exploit survives buyer's patches
+    verification_chain_hash: str              # SHA-256 final hash from event chain
+    timestamp: str                            # ISO 8601
 
 
 @dataclass(frozen=True)

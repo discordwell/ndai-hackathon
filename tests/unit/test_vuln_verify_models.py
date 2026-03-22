@@ -4,6 +4,9 @@ import pytest
 
 from ndai.enclave.vuln_verify.models import (
     BuyerOverlay,
+    CapabilityLevel,
+    CapabilityResult,
+    ClaimedCapability,
     ConfigFile,
     EIFManifest,
     ExpectedOutcome,
@@ -28,7 +31,7 @@ class TestTargetSpec:
             config_files=[ConfigFile("/etc/apache2/ports.conf", "Listen 80")],
             services=[ServiceSpec("apache2", "service apache2 start", "curl -sf http://localhost/ > /dev/null")],
             poc=PoCSpec("bash", "curl -s http://localhost/ -H 'X-Evil: test'"),
-            expected_outcome=ExpectedOutcome(crash_signal=11),
+            claimed_capability=ClaimedCapability(level=CapabilityLevel.ACE),
         )
         defaults.update(overrides)
         return TargetSpec(**defaults)
@@ -83,26 +86,26 @@ class TestPoCResult:
 
 
 class TestVerificationResult:
+    def _cap(self, level=None, **kw):
+        return CapabilityResult(claimed=CapabilityLevel.ACE, verified_level=level, **kw)
+
     def test_no_overlay(self):
         result = VerificationResult(
             spec_id="s1",
-            unpatched_result=PoCResult(139, "", "segfault", 11, False, 0.5),
-            unpatched_matches_expected=True,
-            patched_result=None,
-            patched_matches_expected=None,
+            unpatched_capability=self._cap(CapabilityLevel.ACE, ace_canary_found=True),
+            patched_capability=None,
             overlap_detected=None,
             verification_chain_hash="abc123",
             timestamp="2026-03-22T00:00:00Z",
         )
         assert result.overlap_detected is None
+        assert result.unpatched_capability.ace_canary_found is True
 
     def test_with_overlay_no_overlap(self):
         result = VerificationResult(
             spec_id="s1",
-            unpatched_result=PoCResult(139, "", "segfault", 11, False, 0.5),
-            unpatched_matches_expected=True,
-            patched_result=PoCResult(0, "OK", "", None, False, 0.3),
-            patched_matches_expected=False,
+            unpatched_capability=self._cap(CapabilityLevel.ACE, ace_canary_found=True),
+            patched_capability=self._cap(None),
             overlap_detected=False,
             verification_chain_hash="abc123",
             timestamp="2026-03-22T00:00:00Z",
@@ -110,18 +113,40 @@ class TestVerificationResult:
         assert result.overlap_detected is False
 
     def test_with_overlay_overlap(self):
-        """If PoC works on BOTH unpatched and patched, it's a new 0day (no overlap)."""
         result = VerificationResult(
             spec_id="s1",
-            unpatched_result=PoCResult(139, "", "segfault", 11, False, 0.5),
-            unpatched_matches_expected=True,
-            patched_result=PoCResult(139, "", "segfault", 11, False, 0.5),
-            patched_matches_expected=True,
+            unpatched_capability=self._cap(CapabilityLevel.ACE, ace_canary_found=True),
+            patched_capability=self._cap(CapabilityLevel.ACE, ace_canary_found=True),
             overlap_detected=True,
             verification_chain_hash="abc123",
             timestamp="2026-03-22T00:00:00Z",
         )
         assert result.overlap_detected is True
+
+
+class TestCapabilityLevel:
+    def test_enum_values(self):
+        assert CapabilityLevel.CRASH.value == "crash"
+        assert CapabilityLevel.ACE.value == "ace"
+        assert CapabilityLevel.LPE.value == "lpe"
+
+    def test_from_string(self):
+        assert CapabilityLevel("ace") == CapabilityLevel.ACE
+
+    def test_invalid_raises(self):
+        with pytest.raises(ValueError):
+            CapabilityLevel("not_a_level")
+
+
+class TestClaimedCapability:
+    def test_defaults(self):
+        cap = ClaimedCapability(level=CapabilityLevel.ACE)
+        assert cap.reliability_runs == 3
+        assert cap.crash_signal is None
+
+    def test_crash_with_signal(self):
+        cap = ClaimedCapability(level=CapabilityLevel.CRASH, crash_signal=11)
+        assert cap.crash_signal == 11
 
 
 class TestResourceLimits:

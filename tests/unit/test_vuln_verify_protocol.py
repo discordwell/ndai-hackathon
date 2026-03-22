@@ -1,12 +1,14 @@
-"""Tests for the verification protocol."""
+"""Tests for the capability-oracle verification protocol."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from ndai.enclave.vuln_verify.models import (
     BuyerOverlay,
-    ExpectedOutcome,
+    CapabilityLevel,
+    CapabilityResult,
+    ClaimedCapability,
     FileReplacement,
     PinnedPackage,
     PoCResult,
@@ -14,11 +16,12 @@ from ndai.enclave.vuln_verify.models import (
     ServiceSpec,
     TargetSpec,
 )
+from ndai.enclave.vuln_verify.oracles import OracleManager
 from ndai.enclave.vuln_verify.poc_executor import PoCExecutor, ServiceStatus
 from ndai.enclave.vuln_verify.protocol import VulnVerificationProtocol
 
 
-def _make_spec():
+def _make_spec(capability=CapabilityLevel.ACE, runs=1):
     return TargetSpec(
         spec_id="test-spec",
         base_image="ubuntu:22.04",
@@ -26,67 +29,129 @@ def _make_spec():
         config_files=[],
         services=[ServiceSpec("apache2", "service apache2 start", "true")],
         poc=PoCSpec("bash", "curl http://localhost/"),
-        expected_outcome=ExpectedOutcome(crash_signal=11),
+        claimed_capability=ClaimedCapability(level=capability, reliability_runs=runs),
+        service_user="www-data",
     )
 
 
-def _mock_executor(unpatched_result, patched_result=None):
+def _mock_executor(poc_result):
     executor = MagicMock(spec=PoCExecutor)
     executor.start_services.return_value = [
         ServiceStatus(name="apache2", started=True, healthy=True)
     ]
-
-    if patched_result:
-        executor.execute_poc.side_effect = [unpatched_result, patched_result]
-    else:
-        executor.execute_poc.return_value = unpatched_result
-
-    def check_outcome(result, expected):
-        if expected.crash_signal is not None:
-            return result.signal == expected.crash_signal
-        if expected.exit_code is not None:
-            return result.exit_code == expected.exit_code
-        return False
-
-    executor.check_outcome.side_effect = check_outcome
+    executor.execute_poc.return_value = poc_result
     return executor
 
 
-class TestProtocolUnpatchedOnly:
-    def test_poc_succeeds(self):
-        """PoC crashes target as expected."""
-        crash = PoCResult(139, "", "segfault", 11, False, 0.5)
-        executor = _mock_executor(crash)
+def _mock_oracle(ace=False, lpe=False, info=False, callback=False, crash=False, dos=False):
+    oracle = MagicMock(spec=OracleManager)
+
+    verified = None
+    if lpe:
+        verified = CapabilityLevel.LPE
+    elif callback:
+        verified = CapabilityLevel.CALLBACK
+    elif ace:
+        verified = CapabilityLevel.ACE
+    elif info:
+        verified = CapabilityLevel.INFO_LEAK
+    elif dos:
+        verified = CapabilityLevel.DOS
+    elif crash:
+        verified = CapabilityLevel.CRASH
+
+    oracle.check_result.return_value = CapabilityResult(
+        claimed=CapabilityLevel.ACE,
+        verified_level=verified,
+        ace_canary_found=ace,
+        lpe_canary_found=lpe,
+        info_canary_found=info,
+        callback_received=callback,
+        crash_detected=crash,
+        dos_detected=dos,
+    )
+    return oracle
+
+
+class TestProtocolACE:
+    def test_ace_verified(self):
+        poc_result = PoCResult(0, "canary_value_here", "", None, False, 1.0)
+        executor = _mock_executor(poc_result)
+        oracle = _mock_oracle(ace=True)
 
         protocol = VulnVerificationProtocol(
-            spec=_make_spec(), executor=executor,
+            spec=_make_spec(CapabilityLevel.ACE),
+            executor=executor,
+            oracle=oracle,
         )
         result = protocol.run()
 
-        assert result.unpatched_matches_expected is True
-        assert result.patched_result is None
-        assert result.overlap_detected is None
-        assert result.verification_chain_hash  # Non-empty hash
+        assert result.unpatched_capability.verified_level == CapabilityLevel.ACE
+        assert result.unpatched_capability.ace_canary_found is True
+        assert result.unpatched_capability.reliability_score == 1.0
 
-    def test_poc_fails(self):
-        """PoC does NOT crash target."""
-        clean = PoCResult(0, "OK", "", None, False, 0.3)
-        executor = _mock_executor(clean)
+    def test_ace_claimed_but_only_crash(self):
+        poc_result = PoCResult(139, "", "segfault", 11, False, 0.5)
+        executor = _mock_executor(poc_result)
+        oracle = _mock_oracle(crash=True)  # Only crash detected, no ACE
 
         protocol = VulnVerificationProtocol(
-            spec=_make_spec(), executor=executor,
+            spec=_make_spec(CapabilityLevel.ACE),
+            executor=executor,
+            oracle=oracle,
         )
         result = protocol.run()
 
-        assert result.unpatched_matches_expected is False
+        assert result.unpatched_capability.verified_level == CapabilityLevel.CRASH
+        assert result.unpatched_capability.ace_canary_found is False
+
+    def test_nothing_verified(self):
+        poc_result = PoCResult(0, "clean", "", None, False, 1.0)
+        executor = _mock_executor(poc_result)
+        oracle = _mock_oracle()  # Nothing detected
+
+        protocol = VulnVerificationProtocol(
+            spec=_make_spec(CapabilityLevel.ACE),
+            executor=executor,
+            oracle=oracle,
+        )
+        result = protocol.run()
+
+        assert result.unpatched_capability.verified_level is None
+
+
+class TestProtocolLPE:
+    def test_lpe_verified(self):
+        poc_result = PoCResult(0, "root_canary", "", None, False, 1.0)
+        executor = _mock_executor(poc_result)
+        oracle = _mock_oracle(ace=True, lpe=True)
+
+        protocol = VulnVerificationProtocol(
+            spec=_make_spec(CapabilityLevel.LPE),
+            executor=executor,
+            oracle=oracle,
+        )
+        result = protocol.run()
+
+        assert result.unpatched_capability.verified_level == CapabilityLevel.LPE
 
 
 class TestProtocolWithOverlay:
     def test_no_overlap(self):
-        """PoC works on unpatched, fails on patched → buyer's patch blocks it."""
-        crash = PoCResult(139, "", "segfault", 11, False, 0.5)
-        clean = PoCResult(0, "OK", "", None, False, 0.3)
-        executor = _mock_executor(crash, clean)
+        """Exploit works unpatched, fails on patched."""
+        poc_result = PoCResult(0, "canary", "", None, False, 1.0)
+        executor = _mock_executor(poc_result)
+
+        # First call: ACE on unpatched. Second call: nothing on patched
+        ace_result = CapabilityResult(
+            claimed=CapabilityLevel.ACE, verified_level=CapabilityLevel.ACE,
+            ace_canary_found=True, reliability_score=1.0,
+        )
+        nothing_result = CapabilityResult(
+            claimed=CapabilityLevel.ACE, verified_level=None,
+        )
+        oracle = MagicMock(spec=OracleManager)
+        oracle.check_result.side_effect = [ace_result, nothing_result]
 
         overlay = BuyerOverlay(
             overlay_id="test",
@@ -95,88 +160,117 @@ class TestProtocolWithOverlay:
         overlay_handler = MagicMock()
 
         protocol = VulnVerificationProtocol(
-            spec=_make_spec(),
+            spec=_make_spec(CapabilityLevel.ACE),
             overlay=overlay,
             overlay_handler=overlay_handler,
             executor=executor,
+            oracle=oracle,
         )
         result = protocol.run()
 
-        assert result.unpatched_matches_expected is True
-        assert result.patched_matches_expected is False
+        assert result.unpatched_capability.verified_level == CapabilityLevel.ACE
+        assert result.patched_capability.verified_level is None
         assert result.overlap_detected is False
-        overlay_handler.apply_overlay.assert_called_once()
 
     def test_overlap_detected(self):
-        """PoC works on BOTH → buyer's patch doesn't block it → new 0day."""
-        crash = PoCResult(139, "", "segfault", 11, False, 0.5)
-        executor = _mock_executor(crash, crash)
+        """Exploit works on BOTH — buyer's patches don't block it."""
+        ace_result = CapabilityResult(
+            claimed=CapabilityLevel.ACE, verified_level=CapabilityLevel.ACE,
+            ace_canary_found=True,
+        )
+        oracle = MagicMock(spec=OracleManager)
+        oracle.check_result.return_value = ace_result
+
+        poc_result = PoCResult(0, "canary", "", None, False, 1.0)
+        executor = _mock_executor(poc_result)
 
         overlay = BuyerOverlay(
             overlay_id="test",
             file_replacements=[FileReplacement("/usr/lib/test.so", b"patched")],
         )
-        overlay_handler = MagicMock()
 
         protocol = VulnVerificationProtocol(
-            spec=_make_spec(),
+            spec=_make_spec(CapabilityLevel.ACE),
             overlay=overlay,
-            overlay_handler=overlay_handler,
+            overlay_handler=MagicMock(),
             executor=executor,
+            oracle=oracle,
         )
         result = protocol.run()
 
-        assert result.unpatched_matches_expected is True
-        assert result.patched_matches_expected is True
         assert result.overlap_detected is True
 
-    def test_poc_fails_unpatched(self):
-        """PoC fails on unpatched → overlap is None (can't test what doesn't work)."""
-        clean = PoCResult(0, "OK", "", None, False, 0.3)
-        executor = _mock_executor(clean, clean)
 
-        overlay = BuyerOverlay(
-            overlay_id="test",
-            file_replacements=[FileReplacement("/usr/lib/test.so", b"patched")],
+class TestReliability:
+    def test_multiple_runs(self):
+        """3 runs, 2 succeed → reliability 0.67."""
+        poc_result = PoCResult(0, "canary", "", None, False, 1.0)
+        executor = _mock_executor(poc_result)
+
+        ace_result = CapabilityResult(
+            claimed=CapabilityLevel.ACE, verified_level=CapabilityLevel.ACE,
+            ace_canary_found=True,
         )
-        overlay_handler = MagicMock()
+        fail_result = CapabilityResult(
+            claimed=CapabilityLevel.ACE, verified_level=None,
+        )
+
+        oracle = MagicMock(spec=OracleManager)
+        oracle.check_result.side_effect = [ace_result, fail_result, ace_result]
 
         protocol = VulnVerificationProtocol(
-            spec=_make_spec(),
-            overlay=overlay,
-            overlay_handler=overlay_handler,
+            spec=_make_spec(CapabilityLevel.ACE, runs=3),
             executor=executor,
+            oracle=oracle,
         )
         result = protocol.run()
 
-        assert result.unpatched_matches_expected is False
-        # Overlap = unpatched_matches AND patched_matches = False AND False = False
-        assert result.overlap_detected is False
+        assert result.unpatched_capability.reliability_score == pytest.approx(0.67, abs=0.01)
+        assert result.unpatched_capability.reliability_runs == 3
+        assert result.unpatched_capability.verified_level == CapabilityLevel.ACE
+
+    def test_all_fail(self):
+        poc_result = PoCResult(0, "no canary", "", None, False, 1.0)
+        executor = _mock_executor(poc_result)
+
+        fail_result = CapabilityResult(
+            claimed=CapabilityLevel.ACE, verified_level=None,
+        )
+        oracle = MagicMock(spec=OracleManager)
+        oracle.check_result.return_value = fail_result
+
+        protocol = VulnVerificationProtocol(
+            spec=_make_spec(CapabilityLevel.ACE, runs=3),
+            executor=executor,
+            oracle=oracle,
+        )
+        result = protocol.run()
+
+        assert result.unpatched_capability.reliability_score == 0.0
+        assert result.unpatched_capability.verified_level is None
 
 
 class TestVerificationChain:
-    def test_chain_hash_is_deterministic_for_same_input(self):
-        """Same execution results → same chain hash (ignoring timestamps)."""
-        crash = PoCResult(139, "", "segfault", 11, False, 0.5)
-        executor = _mock_executor(crash)
+    def test_chain_hash_present(self):
+        poc_result = PoCResult(0, "canary", "", None, False, 1.0)
+        executor = _mock_executor(poc_result)
+        oracle = _mock_oracle(ace=True)
 
-        p1 = VulnVerificationProtocol(spec=_make_spec(), executor=executor)
-        r1 = p1.run()
+        protocol = VulnVerificationProtocol(
+            spec=_make_spec(), executor=executor, oracle=oracle,
+        )
+        result = protocol.run()
 
-        # Reset mock
-        executor.execute_poc.return_value = crash
-        p2 = VulnVerificationProtocol(spec=_make_spec(), executor=executor)
-        r2 = p2.run()
+        assert len(result.verification_chain_hash) == 64  # SHA-256 hex
 
-        # Hashes differ because of timestamp, but both are non-empty
-        assert len(r1.verification_chain_hash) == 64  # SHA-256 hex
-        assert len(r2.verification_chain_hash) == 64
+    def test_services_stopped_after(self):
+        poc_result = PoCResult(0, "", "", None, False, 1.0)
+        executor = _mock_executor(poc_result)
+        oracle = _mock_oracle()
 
-    def test_services_stopped_after_protocol(self):
-        crash = PoCResult(139, "", "segfault", 11, False, 0.5)
-        executor = _mock_executor(crash)
-
-        protocol = VulnVerificationProtocol(spec=_make_spec(), executor=executor)
+        protocol = VulnVerificationProtocol(
+            spec=_make_spec(), executor=executor, oracle=oracle,
+        )
         protocol.run()
 
-        executor.stop_services.assert_called_once()
+        executor.stop_services.assert_called()

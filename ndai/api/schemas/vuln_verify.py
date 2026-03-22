@@ -27,11 +27,11 @@ class PoCSpecSchema(BaseModel):
     timeout_sec: int = 60
 
 
-class ExpectedOutcomeSchema(BaseModel):
-    exit_code: int | None = None
-    stdout_contains: str | None = None
-    stderr_contains: str | None = None
-    crash_signal: int | None = None
+class ClaimedCapabilitySchema(BaseModel):
+    level: str  # "crash" | "dos" | "info_leak" | "ace" | "lpe" | "callback"
+    crash_signal: int | None = None  # Only for level=crash
+    exit_code: int | None = None     # Only for level=crash
+    reliability_runs: int = 3
 
 
 class TargetSpecCreateRequest(BaseModel):
@@ -41,7 +41,8 @@ class TargetSpecCreateRequest(BaseModel):
     config_files: list[ConfigFileSpec] = []
     services: list[ServiceSpecSchema] = []
     poc: PoCSpecSchema
-    expected_outcome: ExpectedOutcomeSchema
+    claimed_capability: ClaimedCapabilitySchema
+    service_user: str = "www-data"
 
 
 class TargetSpecResponse(BaseModel):
@@ -65,9 +66,22 @@ class OverlayUploadRequest(BaseModel):
     encrypted_overlay: str  # base64-encoded ECIES ciphertext
 
 
+class CapabilityResultSchema(BaseModel):
+    claimed: str                          # Capability level claimed
+    verified_level: str | None = None     # Highest level confirmed
+    ace_canary_found: bool = False
+    lpe_canary_found: bool = False
+    info_canary_found: bool = False
+    callback_received: bool = False
+    crash_detected: bool = False
+    dos_detected: bool = False
+    reliability_score: float = 0.0
+    reliability_runs: int = 1
+
+
 class VerificationResultResponse(BaseModel):
-    unpatched_matches: bool
-    patched_matches: bool | None = None
+    unpatched_capability: CapabilityResultSchema
+    patched_capability: CapabilityResultSchema | None = None
     overlap_detected: bool | None = None
     verification_chain_hash: str
     pcr0: str | None = None

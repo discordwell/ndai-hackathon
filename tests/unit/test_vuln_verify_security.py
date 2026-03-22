@@ -4,6 +4,8 @@ import pytest
 
 from ndai.enclave.vuln_verify.models import (
     BuyerOverlay,
+    CapabilityLevel,
+    ClaimedCapability,
     ConfigFile,
     ExpectedOutcome,
     FileReplacement,
@@ -28,7 +30,7 @@ def _make_valid_spec(**overrides):
         config_files=[ConfigFile("/etc/apache2/ports.conf", "Listen 80")],
         services=[ServiceSpec("apache2", "service apache2 start", "curl -sf http://localhost/ > /dev/null")],
         poc=PoCSpec("bash", "curl http://localhost/"),
-        expected_outcome=ExpectedOutcome(crash_signal=11),
+        claimed_capability=ClaimedCapability(level=CapabilityLevel.ACE),
     )
     defaults.update(overrides)
     return TargetSpec(**defaults)

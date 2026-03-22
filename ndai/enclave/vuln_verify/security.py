@@ -13,6 +13,8 @@ import re
 
 from ndai.enclave.vuln_verify.models import (
     BuyerOverlay,
+    CapabilityLevel,
+    ClaimedCapability,
     ConfigFile,
     PinnedPackage,
     PoCSpec,
@@ -146,6 +148,9 @@ def validate_target_spec(spec: TargetSpec) -> list[str]:
     # PoC validation
     errors.extend(_validate_poc(spec.poc))
 
+    # Claimed capability validation
+    errors.extend(_validate_capability(spec.claimed_capability))
+
     return errors
 
 
@@ -166,6 +171,24 @@ def _validate_poc(poc: PoCSpec) -> list[str]:
     for pattern in POC_DANGEROUS_PATTERNS:
         if pattern.search(poc.script_content):
             errors.append(f"Dangerous pattern in PoC script: {pattern.pattern}")
+
+    return errors
+
+
+def _validate_capability(cap: ClaimedCapability) -> list[str]:
+    """Validate claimed capability."""
+    errors: list[str] = []
+
+    try:
+        _ = CapabilityLevel(cap.level.value)
+    except (ValueError, AttributeError):
+        errors.append(f"Invalid capability level: {cap.level}")
+
+    if cap.reliability_runs < 1 or cap.reliability_runs > 20:
+        errors.append(f"reliability_runs must be 1-20, got {cap.reliability_runs}")
+
+    if cap.level == CapabilityLevel.CRASH and cap.crash_signal is None and cap.exit_code is None:
+        errors.append("CRASH capability requires crash_signal or exit_code")
 
     return errors
 

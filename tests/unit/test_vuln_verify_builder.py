@@ -4,8 +4,9 @@ import pytest
 
 from ndai.enclave.vuln_verify.builder import BuildError, EIFBuilder
 from ndai.enclave.vuln_verify.models import (
+    CapabilityLevel,
+    ClaimedCapability,
     ConfigFile,
-    ExpectedOutcome,
     PinnedPackage,
     PoCSpec,
     ServiceSpec,
@@ -26,7 +27,7 @@ def _make_spec(**overrides):
         ],
         services=[ServiceSpec("apache2", "service apache2 start", "curl -sf http://localhost/ > /dev/null")],
         poc=PoCSpec("bash", "curl http://localhost/ -H 'Evil: test'"),
-        expected_outcome=ExpectedOutcome(crash_signal=11),
+        claimed_capability=ClaimedCapability(level=CapabilityLevel.ACE),
     )
     defaults.update(overrides)
     return TargetSpec(**defaults)
