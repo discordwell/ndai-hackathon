@@ -11,11 +11,8 @@ export function SubmitVulnPage() {
     anonymized_summary: "",
     cvss_self_assessed: 7.0,
     discovery_date: new Date().toISOString().split("T")[0],
-    software_category: "default",
+    asking_price_eth: 0.1,
     exclusivity: "exclusive",
-    embargo_days: 90,
-    max_disclosure_level: 3,
-    outside_option_value: 0.3,
     patch_status: "unpatched",
   });
   const [error, setError] = useState("");
@@ -111,21 +108,15 @@ export function SubmitVulnPage() {
               onChange={(e) => set("discovery_date", e.target.value)} />
           </div>
           <div>
-            <label className="zk-label">CATEGORY</label>
-            <select className="zk-select" value={form.software_category}
-              onChange={(e) => set("software_category", e.target.value)}>
-              <option value="default">Default</option>
-              <option value="browser">Browser</option>
-              <option value="os_kernel">OS / Kernel</option>
-              <option value="mobile">Mobile</option>
-              <option value="embedded">Embedded</option>
-              <option value="cloud">Cloud / SaaS</option>
-            </select>
+            <label className="zk-label">ASKING PRICE (ETH) *</label>
+            <input className="zk-input" type="number" required min={0.001} step={0.001}
+              value={form.asking_price_eth}
+              onChange={(e) => set("asking_price_eth", parseFloat(e.target.value))} />
           </div>
         </div>
 
         <div className="zk-section-title">TERMS</div>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="zk-label">EXCLUSIVITY</label>
             <select className="zk-select" value={form.exclusivity}
@@ -135,19 +126,12 @@ export function SubmitVulnPage() {
             </select>
           </div>
           <div>
-            <label className="zk-label">EMBARGO (DAYS)</label>
-            <input className="zk-input" type="number" min={0} max={365}
-              value={form.embargo_days}
-              onChange={(e) => set("embargo_days", parseInt(e.target.value))} />
-          </div>
-          <div>
-            <label className="zk-label">MAX DISCLOSURE</label>
-            <select className="zk-select" value={form.max_disclosure_level}
-              onChange={(e) => set("max_disclosure_level", parseInt(e.target.value))}>
-              <option value={0}>Level 0 — Class only</option>
-              <option value={1}>Level 1 — + Component</option>
-              <option value={2}>Level 2 — + Attack surface</option>
-              <option value={3}>Level 3 — Full PoC summary</option>
+            <label className="zk-label">PATCH STATUS</label>
+            <select className="zk-select" value={form.patch_status}
+              onChange={(e) => set("patch_status", e.target.value)}>
+              <option value="unpatched">Unpatched</option>
+              <option value="patched">Patched</option>
+              <option value="unknown">Unknown</option>
             </select>
           </div>
         </div>

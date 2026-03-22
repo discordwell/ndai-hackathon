@@ -50,12 +50,12 @@ export interface VulnAgreementResponse {
   budget_cap: number | null;
 }
 
-export const createVuln = (data: VulnCreateRequest) => post<VulnResponse>("/vulns/", data);
-export const listVulns = () => get<VulnResponse[]>("/vulns/");
-export const listVulnListings = () => get<VulnListingResponse[]>("/vulns/listings");
-export const getVuln = (id: string) => get<VulnResponse>(`/vulns/${id}`);
+export const createVuln = (data: VulnCreateRequest) => post<VulnResponse>("/zk-vulns/", data);
+export const listVulns = () => get<VulnResponse[]>("/zk-vulns/");
+export const listVulnListings = () => get<VulnListingResponse[]>("/zk-vulns/listings");
+export const getVuln = (id: string) => get<VulnResponse>(`/zk-vulns/${id}`);
 export const createVulnAgreement = (vulnId: string, budgetCap: number) =>
-  post<VulnAgreementResponse>(`/vulns/${vulnId}/agreements`, { budget_cap: budgetCap });
-export const listVulnAgreements = () => get<VulnAgreementResponse[]>("/vulns/agreements");
-export const getVulnAgreement = (id: string) => get<VulnAgreementResponse>(`/vulns/agreements/${id}`);
-export const startNegotiation = (id: string) => post<{ status: string }>(`/vulns/negotiations/${id}/start`, {});
+  post<VulnAgreementResponse>(`/zk-vulns/agreements`, { vulnerability_id: vulnId, budget_cap: budgetCap });
+export const listVulnAgreements = () => get<VulnAgreementResponse[]>("/zk-vulns/agreements");
+export const getVulnAgreement = (id: string) => get<VulnAgreementResponse>(`/zk-vulns/agreements/${id}`);
+export const startNegotiation = (id: string) => post<{ status: string }>(`/zk-vulns/negotiations/${id}/start`, {});
