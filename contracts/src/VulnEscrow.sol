@@ -29,6 +29,10 @@ contract VulnEscrow is ReentrancyGuard {
     State   public state;
     bool    public isPatchedBeforeSettlement;
 
+    // Sealed delivery commitments (exploit transfer)
+    bytes32 public deliveryHash;     // SHA-256(encrypted_exploit) — integrity proof
+    bytes32 public keyCommitment;    // SHA-256(encrypted_delivery_key) — accountability proof
+
     event OutcomeSubmitted(uint256 finalPrice, uint256 decayAdjustedPrice, bytes32 attestationHash);
     event DealAccepted(uint256 sellerPayout, uint256 buyerRefund);
     event DealRejected(uint256 buyerRefund);
@@ -69,14 +73,18 @@ contract VulnEscrow is ReentrancyGuard {
         state = State.Funded;
     }
 
-    /// @notice Operator submits negotiation outcome with decay-adjusted pricing.
-    /// @param _finalPrice     Raw Nash-bargained price (before decay)
+    /// @notice Operator submits negotiation outcome with decay-adjusted pricing and delivery commitments.
+    /// @param _finalPrice      Raw Nash-bargained price (before decay)
     /// @param _attestationHash Hash from TEE attestation
-    /// @param _decayNumerator  Decay factor × 1e18 (e.g., 0.85 × 1e18 = 850000000000000000)
+    /// @param _decayNumerator  Decay factor × 1e18
+    /// @param _deliveryHash    SHA-256(encrypted_exploit) — integrity commitment
+    /// @param _keyCommitment   SHA-256(encrypted_delivery_key) — accountability commitment
     function submitOutcome(
         uint256 _finalPrice,
         bytes32 _attestationHash,
-        uint256 _decayNumerator
+        uint256 _decayNumerator,
+        bytes32 _deliveryHash,
+        bytes32 _keyCommitment
     ) external onlyOperator inState(State.Funded) {
         require(_decayNumerator <= 1e18, "Decay numerator exceeds 1.0");
         require(_decayNumerator > 0, "Decay numerator must be positive");
@@ -89,9 +97,18 @@ contract VulnEscrow is ReentrancyGuard {
         decayNumerator    = _decayNumerator;
         decayAdjustedPrice = adjusted;
         attestationHash    = _attestationHash;
+        deliveryHash       = _deliveryHash;
+        keyCommitment      = _keyCommitment;
         state = State.Evaluated;
 
         emit OutcomeSubmitted(_finalPrice, adjusted, _attestationHash);
+    }
+
+    /// @notice Verify delivery commitments match stored values.
+    function verifyDelivery(bytes32 _deliveryHash, bytes32 _keyCommitment)
+        external view returns (bool)
+    {
+        return deliveryHash == _deliveryHash && keyCommitment == _keyCommitment;
     }
 
     /// @notice Operator reports that the vulnerability has been independently patched.

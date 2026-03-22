@@ -2,6 +2,15 @@
 
 ## Session Summaries
 
+### 2026-03-22T20:00Z — Sealed Exploit Delivery: Zero-Knowledge Transfer
+- Built cryptographic delivery protocol: exploit plaintext ONLY exists inside Nitro Enclave
+- **Protocol**: Seller encrypts exploit to enclave (ECIES), enclave re-encrypts with fresh K_d for buyer, encrypts K_d to buyer's P-384 public key (ECIES). Platform stores only ciphertext.
+- **On-chain commitments**: SHA-256 hashes of encrypted exploit + encrypted key stored on VulnEscrow contract. Proves integrity without revealing content.
+- **Payment gating**: API endpoints `/delivery/{id}/payload` and `/delivery/{id}/key` only return ciphertext after on-chain DealAccepted
+- **Platform deniability**: operator stores AES ciphertext (no K_d) + ECIES ciphertext (no buyer privkey). Can truthfully say "I never possessed any decryption key."
+- **Test suite proves**: seal/unseal round-trip, platform cannot decrypt, wrong key fails, tampering detected, different buyers get different ciphertext
+- 14 new crypto tests, 655 total passing.
+
 ### 2026-03-22T19:00Z — Capability Oracles: Proof-of-Exploitation
 - Replaced crash-based verification with capability oracle system
 - **Oracle types**: ACE (canary readable by service user), LPE (canary root-only), Info Leak (canary in process memory), Callback (TCP listener), Crash (signal detection), DoS (health check failure)

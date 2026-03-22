@@ -72,7 +72,7 @@ contract VulnEscrowTest is Test {
         bytes32 attHash = keccak256("test");
 
         vm.prank(operator);
-        escrow.submitOutcome(rawPrice, attHash, DECAY_85);
+        escrow.submitOutcome(rawPrice, attHash, DECAY_85, bytes32(0), bytes32(0));
 
         assertEq(uint(escrow.state()), uint(VulnEscrow.State.Evaluated));
         assertEq(escrow.finalPrice(), rawPrice);
@@ -87,7 +87,7 @@ contract VulnEscrowTest is Test {
         bytes32 attHash = keccak256("test");
 
         vm.prank(operator);
-        escrow.submitOutcome(rawPrice, attHash, DECAY_100);
+        escrow.submitOutcome(rawPrice, attHash, DECAY_100, bytes32(0), bytes32(0));
 
         assertEq(escrow.decayAdjustedPrice(), rawPrice);
     }
@@ -95,43 +95,43 @@ contract VulnEscrowTest is Test {
     function test_submit_reverts_decay_over_one() public {
         vm.prank(operator);
         vm.expectRevert("Decay numerator exceeds 1.0");
-        escrow.submitOutcome(0.5 ether, keccak256("x"), 2e18);
+        escrow.submitOutcome(0.5 ether, keccak256("x"), 2e18, bytes32(0), bytes32(0));
     }
 
     function test_submit_reverts_decay_zero() public {
         vm.prank(operator);
         vm.expectRevert("Decay numerator must be positive");
-        escrow.submitOutcome(0.5 ether, keccak256("x"), 0);
+        escrow.submitOutcome(0.5 ether, keccak256("x"), 0, bytes32(0), bytes32(0));
     }
 
     function test_submit_reverts_adjusted_exceeds_budget() public {
         vm.prank(operator);
         // rawPrice = 2 ether with 100% decay = 2 ether > 1 ether budget
         vm.expectRevert("Adjusted price exceeds budget");
-        escrow.submitOutcome(2 ether, keccak256("x"), DECAY_100);
+        escrow.submitOutcome(2 ether, keccak256("x"), DECAY_100, bytes32(0), bytes32(0));
     }
 
     function test_submit_reverts_adjusted_below_reserve() public {
         vm.prank(operator);
         // rawPrice = 0.01 ether with 85% decay = 0.0085 ether < 0.1 ether reserve
         vm.expectRevert("Adjusted price below reserve");
-        escrow.submitOutcome(0.01 ether, keccak256("x"), DECAY_85);
+        escrow.submitOutcome(0.01 ether, keccak256("x"), DECAY_85, bytes32(0), bytes32(0));
     }
 
     function test_submit_reverts_not_operator() public {
         vm.prank(stranger);
         vm.expectRevert("Only operator");
-        escrow.submitOutcome(0.5 ether, keccak256("x"), DECAY_85);
+        escrow.submitOutcome(0.5 ether, keccak256("x"), DECAY_85, bytes32(0), bytes32(0));
     }
 
     function test_submit_reverts_wrong_state() public {
         // Submit once
         vm.prank(operator);
-        escrow.submitOutcome(0.5 ether, keccak256("x"), DECAY_85);
+        escrow.submitOutcome(0.5 ether, keccak256("x"), DECAY_85, bytes32(0), bytes32(0));
         // Try again in Evaluated state
         vm.prank(operator);
         vm.expectRevert("Wrong state");
-        escrow.submitOutcome(0.5 ether, keccak256("x"), DECAY_85);
+        escrow.submitOutcome(0.5 ether, keccak256("x"), DECAY_85, bytes32(0), bytes32(0));
     }
 
     // ── acceptDeal ──
@@ -139,7 +139,7 @@ contract VulnEscrowTest is Test {
     function test_accept_pays_decay_adjusted() public {
         uint256 rawPrice = 0.5 ether;
         vm.prank(operator);
-        escrow.submitOutcome(rawPrice, keccak256("x"), DECAY_85);
+        escrow.submitOutcome(rawPrice, keccak256("x"), DECAY_85, bytes32(0), bytes32(0));
 
         uint256 adjusted = (rawPrice * DECAY_85) / 1e18; // 0.425 ether
         uint256 sellerBefore = seller.balance;
@@ -155,7 +155,7 @@ contract VulnEscrowTest is Test {
 
     function test_accept_reverts_not_seller() public {
         vm.prank(operator);
-        escrow.submitOutcome(0.5 ether, keccak256("x"), DECAY_85);
+        escrow.submitOutcome(0.5 ether, keccak256("x"), DECAY_85, bytes32(0), bytes32(0));
 
         vm.prank(stranger);
         vm.expectRevert("Only seller");
@@ -166,7 +166,7 @@ contract VulnEscrowTest is Test {
 
     function test_reject_refunds_buyer() public {
         vm.prank(operator);
-        escrow.submitOutcome(0.5 ether, keccak256("x"), DECAY_85);
+        escrow.submitOutcome(0.5 ether, keccak256("x"), DECAY_85, bytes32(0), bytes32(0));
 
         uint256 buyerBefore = buyer.balance;
         vm.prank(seller);
@@ -197,7 +197,7 @@ contract VulnEscrowTest is Test {
 
     function test_report_patch_reverts_wrong_state() public {
         vm.prank(operator);
-        escrow.submitOutcome(0.5 ether, keccak256("x"), DECAY_85);
+        escrow.submitOutcome(0.5 ether, keccak256("x"), DECAY_85, bytes32(0), bytes32(0));
         // Now in Evaluated, not Funded
         vm.prank(operator);
         vm.expectRevert("Wrong state");
@@ -230,7 +230,7 @@ contract VulnEscrowTest is Test {
         bytes32 attHash = keccak256(abi.encodePacked(pcr0, nonce, outcome));
 
         vm.prank(operator);
-        escrow.submitOutcome(0.5 ether, attHash, DECAY_85);
+        escrow.submitOutcome(0.5 ether, attHash, DECAY_85, bytes32(0), bytes32(0));
 
         assertTrue(escrow.verifyAttestation(pcr0, nonce, outcome));
         assertFalse(escrow.verifyAttestation(pcr0, nonce, bytes32(uint256(999))));
@@ -247,6 +247,21 @@ contract VulnEscrowTest is Test {
         assertFalse(escrow.isEmbargoActive());
     }
 
+    // ── Delivery commitments ──
+
+    function test_delivery_commitments_stored() public {
+        bytes32 dHash = keccak256("encrypted_exploit");
+        bytes32 kHash = keccak256("encrypted_key");
+
+        vm.prank(operator);
+        escrow.submitOutcome(0.5 ether, keccak256("att"), DECAY_85, dHash, kHash);
+
+        assertEq(escrow.deliveryHash(), dHash);
+        assertEq(escrow.keyCommitment(), kHash);
+        assertTrue(escrow.verifyDelivery(dHash, kHash));
+        assertFalse(escrow.verifyDelivery(dHash, bytes32(uint256(999))));
+    }
+
     // ── Fuzz ──
 
     function testFuzz_decay_adjusted_price(uint256 rawPrice, uint256 decay) public {
@@ -257,7 +272,7 @@ contract VulnEscrowTest is Test {
         // Only submit if adjusted is in valid range
         if (adjusted >= RESERVE && adjusted <= BUDGET) {
             vm.prank(operator);
-            escrow.submitOutcome(rawPrice, keccak256("fuzz"), decay);
+            escrow.submitOutcome(rawPrice, keccak256("fuzz"), decay, bytes32(0), bytes32(0));
             assertEq(escrow.decayAdjustedPrice(), adjusted);
         }
     }

@@ -10,6 +10,7 @@ from ndai.models.transcript import MeetingTranscript, TranscriptSummary
 from ndai.models.poker import PokerTable, PokerSeat, PokerHand, PokerHandAction
 from ndai.models.vulnerability import Vulnerability, VulnAgreement, VulnAgreementOutcome
 from ndai.models.vuln_verify import TargetSpecRecord, EIFManifestRecord, VerificationResultRecord
+from ndai.models.delivery import DeliveryRecord
 
 __all__ = [
     "Base",
@@ -33,4 +34,5 @@ __all__ = [
     "TargetSpecRecord",
     "EIFManifestRecord",
     "VerificationResultRecord",
+    "DeliveryRecord",
 ]
