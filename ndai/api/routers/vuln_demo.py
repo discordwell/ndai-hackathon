@@ -17,7 +17,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ndai.api.dependencies import get_current_user
+from ndai.api.dependencies import decode_token, get_current_user
 from ndai.db.session import get_db
 
 router = APIRouter()
@@ -119,7 +119,7 @@ async def start_full_pipeline(
                 _broadcast_sse(agreement_id, event, data)
 
             session = VulnDemoSession(config, progress_callback=progress_callback)
-            result = session.run()
+            result = await asyncio.to_thread(session.run)
 
             if result.success:
                 result_data = {
@@ -180,9 +180,15 @@ async def get_pipeline_status(
 @router.get("/{agreement_id}/progress")
 async def stream_progress(
     agreement_id: str,
-    user_id: str = Depends(get_current_user),
+    token: str | None = None,
 ):
-    """SSE stream of demo pipeline progress events."""
+    """SSE stream of demo pipeline progress events.
+
+    Auth via query param (?token=...) since EventSource doesn't support
+    custom headers. Falls back to nothing if no token provided.
+    """
+    if token:
+        decode_token(token)  # Validates and raises 401 if invalid
     queue: asyncio.Queue = asyncio.Queue()
 
     if agreement_id not in _progress_queues:

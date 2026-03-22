@@ -95,14 +95,15 @@ class VulnDemoSession:
             if not self.config.skip_verification:
                 self._emit("phase_start", {"phase": "verification", "description": "Verifying exploit via capability oracles"})
                 result.verification = self._run_verification()
+                verified_level = result.verification.unpatched_capability.verified_level
                 self._emit("phase_complete", {
                     "phase": "verification",
                     "claimed": result.verification.unpatched_capability.claimed.value,
-                    "verified": result.verification.unpatched_capability.verified_level.value if result.verification.unpatched_capability.verified_level else None,
+                    "verified": verified_level.value if verified_level else None,
                     "reliability": result.verification.unpatched_capability.reliability_score,
                 })
 
-                if result.verification.unpatched_capability.verified_level is None:
+                if verified_level is None:
                     result.error = "PoC verification failed — no capability verified"
                     self._emit("pipeline_error", {"error": result.error})
                     return result

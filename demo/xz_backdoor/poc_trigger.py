@@ -108,9 +108,11 @@ def trigger_via_ssh_handshake(host: str, port: int, payload: bytes) -> bool:
         # hook intercepts RSA_public_decrypt which is called during
         # signature verification.
         #
-        # For the demo, we use the backdoor trigger port instead.
+        # For the demo, use the backdoor trigger port instead.
+        # SSH handshake injection is not implemented — return False
+        # to fall through to the trigger port method.
         sock.close()
-        return True
+        return False
 
     except (socket.error, OSError) as e:
         print(f"[!] Connection failed: {e}", file=sys.stderr)
