@@ -52,7 +52,7 @@ export interface VulnAgreementResponse {
 
 export const createVuln = (data: VulnCreateRequest) => post<VulnResponse>("/vulns/", data);
 export const listVulns = () => get<VulnResponse[]>("/vulns/");
-export const listVulnListings = () => get<VulnListingResponse[]>("/vulns/marketplace");
+export const listVulnListings = () => get<VulnListingResponse[]>("/vulns/listings");
 export const getVuln = (id: string) => get<VulnResponse>(`/vulns/${id}`);
 export const createVulnAgreement = (vulnId: string, budgetCap: number) =>
   post<VulnAgreementResponse>(`/vulns/${vulnId}/agreements`, { budget_cap: budgetCap });
