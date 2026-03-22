@@ -152,6 +152,52 @@ export function SubmitVulnPage() {
           </div>
         </div>
 
+        <div className="zk-section-title">SECURE YOUR EXPLOIT</div>
+        <div className="border-2 border-zk-border p-5 bg-white">
+          <p className="text-sm mb-4">
+            Before submitting your PoC, verify the enclave is running trusted code and
+            encrypt your exploit so <span className="font-mono font-bold">only the TEE can decrypt it</span> —
+            even if the platform host is compromised.
+          </p>
+
+          <div className="font-mono text-xs bg-zk-bg p-4 mb-4 overflow-x-auto whitespace-pre">{
+`# Install the verification tool (open source)
+pip install nitro-verify
+
+# 1. Verify the enclave attestation (AWS hardware signature)
+nitro-verify attest https://zdayzk.com/api/v1/enclave/attestation \\
+  --pcr0 <expected_code_hash> \\
+  --save-pubkey enclave.der
+
+# 2. Encrypt your exploit to the attested enclave
+nitro-verify seal ./my-exploit.tar.gz \\
+  --pubkey enclave.der \\
+  -o exploit.sealed
+
+# 3. Upload exploit.sealed via the marketplace`
+          }</div>
+
+          <div className="flex items-center gap-4">
+            <a
+              href="https://github.com/discordwell/nitro-verify"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="zk-btn-sm no-underline"
+            >
+              VIEW ON GITHUB
+            </a>
+            <span className="font-mono text-label text-zk-dim">
+              pip install nitro-verify
+            </span>
+          </div>
+
+          <p className="font-mono text-label text-zk-muted mt-4">
+            WHY: THE ATTESTATION IS SIGNED BY AWS HARDWARE, NOT THE HOST.
+            PCR0 PROVES THE EXACT CODE RUNNING IN THE ENCLAVE.
+            THE PUBLIC KEY IS BOUND TO THE ATTESTATION — MITM IS DETECTABLE.
+          </p>
+        </div>
+
         <div className="pt-4">
           <button type="submit" disabled={loading} className="zk-btn-accent disabled:opacity-50">
             {loading ? "SUBMITTING..." : "POST VULNERABILITY"}
