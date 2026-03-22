@@ -1,20 +1,21 @@
 /**
  * Zero-knowledge identity: password-derived Ed25519 keypairs.
  *
- * The passphrase never leaves the client. argon2id derives a 32-byte seed,
+ * The passphrase never leaves the client. scrypt derives a 32-byte seed,
  * which becomes the Ed25519 private key. The server only ever sees the
  * public key.
  */
-import argon2 from "argon2-browser";
+import { scrypt } from "@noble/hashes/scrypt";
+import { utf8ToBytes } from "@noble/hashes/utils";
 import * as ed from "@noble/ed25519";
 
 const SALT = "NDAI_ZK_V1";
 
-// argon2id params — 256 MB memory makes offline brute-force impractical
-const ARGON2_MEM = 262144; // 256 MB in KiB
-const ARGON2_TIME = 3;
-const ARGON2_PARALLELISM = 4;
-const ARGON2_HASH_LEN = 32;
+// scrypt params — N=2^17 (128 MB), r=8, p=1 — memory-hard KDF
+const SCRYPT_N = 131072;
+const SCRYPT_R = 8;
+const SCRYPT_P = 1;
+const KEY_LEN = 32;
 
 export interface ZKIdentity {
   publicKey: Uint8Array;  // 32 bytes
@@ -30,20 +31,22 @@ function bytesToHex(bytes: Uint8Array): string {
 
 /**
  * Derive an Ed25519 identity from a passphrase.
- * Takes ~2-4 seconds depending on hardware (256 MB argon2id).
+ * Uses scrypt (memory-hard KDF, pure JS — no WASM needed).
+ * Takes ~1-3 seconds depending on hardware.
  */
 export async function deriveIdentity(passphrase: string): Promise<ZKIdentity> {
-  const result = await argon2.hash({
-    pass: passphrase,
-    salt: SALT,
-    type: argon2.ArgonType.Argon2id,
-    mem: ARGON2_MEM,
-    time: ARGON2_TIME,
-    parallelism: ARGON2_PARALLELISM,
-    hashLen: ARGON2_HASH_LEN,
+  const salt = utf8ToBytes(SALT);
+  const pass = utf8ToBytes(passphrase);
+
+  // scrypt is synchronous but CPU-intensive — wrap in a microtask
+  // so the UI can show "DERIVING KEY..." before blocking
+  const seed = await new Promise<Uint8Array>((resolve) => {
+    setTimeout(() => {
+      resolve(scrypt(pass, salt, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, dkLen: KEY_LEN }));
+    }, 0);
   });
 
-  const privateKey = new Uint8Array(result.hash);
+  const privateKey = new Uint8Array(seed);
   const publicKey = await ed.getPublicKeyAsync(privateKey);
 
   return {
