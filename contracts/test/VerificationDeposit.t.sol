@@ -14,6 +14,8 @@ contract VerificationDepositTest is Test {
 
     bytes32 constant PROPOSAL_1 = keccak256("proposal-1");
     bytes32 constant PROPOSAL_2 = keccak256("proposal-2");
+    bytes32 constant LINUX_KEY = keccak256("linux");
+    bytes32 constant DEFAULT_KEY = bytes32(0);  // no platform-specific escrow
 
     function setUp() public {
         vd = new VerificationDeposit(operator, platform);
@@ -26,7 +28,7 @@ contract VerificationDepositTest is Test {
     function test_deposit_and_refund() public {
         // Seller deposits
         vm.prank(seller);
-        vd.deposit{value: 0.04 ether}(PROPOSAL_1);
+        vd.deposit{value: 0.04 ether}(PROPOSAL_1, DEFAULT_KEY);
 
         (address depSeller, uint256 depAmount, bool settled) = vd.deposits(PROPOSAL_1);
         assertEq(depSeller, seller);
@@ -47,7 +49,7 @@ contract VerificationDepositTest is Test {
 
     function test_deposit_and_forfeit() public {
         vm.prank(seller);
-        vd.deposit{value: 0.04 ether}(PROPOSAL_1);
+        vd.deposit{value: 0.04 ether}(PROPOSAL_1, DEFAULT_KEY);
 
         uint256 platformBalBefore = vd.platformBalance();
 
@@ -63,18 +65,18 @@ contract VerificationDepositTest is Test {
 
     function test_double_deposit_reverts() public {
         vm.prank(seller);
-        vd.deposit{value: 0.04 ether}(PROPOSAL_1);
+        vd.deposit{value: 0.04 ether}(PROPOSAL_1, DEFAULT_KEY);
 
         vm.prank(seller);
         vm.expectRevert("Already deposited");
-        vd.deposit{value: 0.04 ether}(PROPOSAL_1);
+        vd.deposit{value: 0.04 ether}(PROPOSAL_1, DEFAULT_KEY);
     }
 
     // ── 4. refund already settled reverts ──
 
     function test_refund_already_settled_reverts() public {
         vm.prank(seller);
-        vd.deposit{value: 0.04 ether}(PROPOSAL_1);
+        vd.deposit{value: 0.04 ether}(PROPOSAL_1, DEFAULT_KEY);
 
         vm.prank(operator);
         vd.refund(PROPOSAL_1);
@@ -88,7 +90,7 @@ contract VerificationDepositTest is Test {
 
     function test_only_operator_can_refund() public {
         vm.prank(seller);
-        vd.deposit{value: 0.04 ether}(PROPOSAL_1);
+        vd.deposit{value: 0.04 ether}(PROPOSAL_1, DEFAULT_KEY);
 
         vm.prank(stranger);
         vm.expectRevert("Only operator");
@@ -99,7 +101,7 @@ contract VerificationDepositTest is Test {
 
     function test_only_operator_can_forfeit() public {
         vm.prank(seller);
-        vd.deposit{value: 0.04 ether}(PROPOSAL_1);
+        vd.deposit{value: 0.04 ether}(PROPOSAL_1, DEFAULT_KEY);
 
         vm.prank(stranger);
         vm.expectRevert("Only operator");
@@ -143,25 +145,22 @@ contract VerificationDepositTest is Test {
     // ── 10. platform escrow set and used ──
 
     function test_platform_escrow_set_and_used() public {
-        bytes32 linuxKey = keccak256("linux");
-
         // Operator sets a higher escrow for "linux" platform
         vm.prank(operator);
-        vd.setPlatformEscrow(linuxKey, 0.1 ether);
+        vd.setPlatformEscrow(LINUX_KEY, 0.1 ether);
 
-        assertEq(vd.platformEscrow(linuxKey), 0.1 ether);
+        assertEq(vd.platformEscrow(LINUX_KEY), 0.1 ether);
 
-        // Deposit using the linuxKey as proposalId — but platformEscrow is keyed by proposalId
-        // so we use linuxKey as the proposalId to demonstrate the lookup
+        // Deposit with linux platform key — should require 0.1 ether
         vm.prank(seller);
         vm.expectRevert("Insufficient deposit");
-        vd.deposit{value: 0.04 ether}(linuxKey);
+        vd.deposit{value: 0.04 ether}(PROPOSAL_1, LINUX_KEY);
 
         // Now deposit with sufficient amount
         vm.prank(seller);
-        vd.deposit{value: 0.1 ether}(linuxKey);
+        vd.deposit{value: 0.1 ether}(PROPOSAL_1, LINUX_KEY);
 
-        (address depSeller, uint256 depAmount, ) = vd.deposits(linuxKey);
+        (address depSeller, uint256 depAmount, ) = vd.deposits(PROPOSAL_1);
         assertEq(depSeller, seller);
         assertEq(depAmount, 0.1 ether);
     }
@@ -171,7 +170,7 @@ contract VerificationDepositTest is Test {
     function test_withdraw_platform_fees() public {
         // Accumulate fees via forfeit
         vm.prank(seller);
-        vd.deposit{value: 0.04 ether}(PROPOSAL_1);
+        vd.deposit{value: 0.04 ether}(PROPOSAL_1, DEFAULT_KEY);
 
         vm.prank(operator);
         vd.forfeit(PROPOSAL_1);
@@ -197,6 +196,6 @@ contract VerificationDepositTest is Test {
     function test_deposit_insufficient_amount_reverts() public {
         vm.prank(seller);
         vm.expectRevert("Insufficient deposit");
-        vd.deposit{value: 0.01 ether}(PROPOSAL_1);
+        vd.deposit{value: 0.01 ether}(PROPOSAL_1, DEFAULT_KEY);
     }
 }

@@ -54,10 +54,11 @@ contract VerificationDeposit is ReentrancyGuard {
 
     /// @notice Seller deposits ETH for a proposal. Amount must meet platform-specific minimum.
     /// @param proposalId Unique identifier for the vulnerability proposal
-    function deposit(bytes32 proposalId) external payable {
+    /// @param platformKey keccak256 of platform name (e.g., keccak256("linux")) for escrow lookup
+    function deposit(bytes32 proposalId, bytes32 platformKey) external payable {
         require(deposits[proposalId].seller == address(0), "Already deposited");
 
-        uint256 required = platformEscrow[proposalId];
+        uint256 required = platformEscrow[platformKey];
         if (required == 0) {
             required = BADGE_PRICE;
         }

@@ -49,7 +49,8 @@ def upgrade() -> None:
     op.create_table(
         "target_builds",
         sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("target_id", sa.dialects.postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("target_id", sa.dialects.postgresql.UUID(as_uuid=True),
+                  sa.ForeignKey("known_targets.id"), nullable=False),
         sa.Column("version", sa.String(100), nullable=False),
         sa.Column("build_type", sa.String(20), nullable=False),
         sa.Column("cache_key", sa.String(64), nullable=False),
@@ -61,13 +62,15 @@ def upgrade() -> None:
         sa.Column("status", sa.String(20), server_default="building"),
         sa.Column("built_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
+    op.create_index("ix_target_builds_target_id", "target_builds", ["target_id"])
 
     # ── verification_proposals ──
     op.create_table(
         "verification_proposals",
         sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column("seller_pubkey", sa.String(64), nullable=False),
-        sa.Column("target_id", sa.dialects.postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("target_id", sa.dialects.postgresql.UUID(as_uuid=True),
+                  sa.ForeignKey("known_targets.id"), nullable=False),
         sa.Column("target_version", sa.String(100), nullable=False),
         sa.Column("poc_script", sa.Text(), nullable=False),
         sa.Column("poc_script_type", sa.String(20), nullable=False),
@@ -87,6 +90,8 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
+    op.create_index("ix_verification_proposals_seller_pubkey", "verification_proposals", ["seller_pubkey"])
+    op.create_index("ix_verification_proposals_target_id", "verification_proposals", ["target_id"])
 
     # ── Badge fields on vuln_identities ──
     op.add_column("vuln_identities", sa.Column("has_badge", sa.Boolean(), server_default="false"))
@@ -305,6 +310,9 @@ def downgrade() -> None:
     op.drop_column("vuln_identities", "badge_tx_hash")
     op.drop_column("vuln_identities", "badge_type")
     op.drop_column("vuln_identities", "has_badge")
+    op.drop_index("ix_verification_proposals_target_id", "verification_proposals")
+    op.drop_index("ix_verification_proposals_seller_pubkey", "verification_proposals")
     op.drop_table("verification_proposals")
+    op.drop_index("ix_target_builds_target_id", "target_builds")
     op.drop_table("target_builds")
     op.drop_table("known_targets")

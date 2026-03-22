@@ -116,10 +116,18 @@ class VerificationDepositClient:
     # ------------------------------------------------------------------
 
     async def deposit(
-        self, proposal_id: bytes, private_key: str, value_wei: int
+        self, proposal_id: bytes, platform_key: bytes, private_key: str, value_wei: int
     ) -> str:
-        """Seller places a verification deposit for a proposal."""
-        fn = self._contract.functions.deposit(proposal_id)
+        """Seller places a verification deposit for a proposal.
+
+        Args:
+            proposal_id: bytes32 proposal identifier.
+            platform_key: keccak256 of platform name (e.g., keccak256("linux"))
+                for escrow amount lookup. Pass bytes32(0) for default escrow.
+            private_key: Seller's private key.
+            value_wei: ETH amount in wei.
+        """
+        fn = self._contract.functions.deposit(proposal_id, platform_key)
         return await self._send_tx(fn, private_key, value_wei=value_wei)
 
     async def purchase_badge(self, private_key: str, value_wei: int) -> str:

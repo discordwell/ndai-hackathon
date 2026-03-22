@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -13,10 +13,16 @@ from ndai.models.user import Base
 
 class VerificationProposal(Base):
     __tablename__ = "verification_proposals"
+    __table_args__ = (
+        Index("ix_verification_proposals_seller_pubkey", "seller_pubkey"),
+        Index("ix_verification_proposals_target_id", "target_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     seller_pubkey: Mapped[str] = mapped_column(String(64), nullable=False)
-    target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    target_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("known_targets.id"), nullable=False
+    )
     target_version: Mapped[str] = mapped_column(String(100), nullable=False)  # snapshot at time of proposal
 
     # PoC details

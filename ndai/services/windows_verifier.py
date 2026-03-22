@@ -129,16 +129,21 @@ New-Item -ItemType File -Force -Path C:\\canary\\canary_ace.txt
             # Check canaries
             check_script = f"""
 $aceContent = Get-Content -Path C:\\canary\\canary_ace.txt -ErrorAction SilentlyContinue
-$lpeContent = Get-Content -Path C:\\canary\\canary_lpe.txt -ErrorAction SilentlyContinue
 Write-Output "ACE_CANARY=$aceContent"
-Write-Output "LPE_CANARY=$lpeContent"
-Write-Output "LPE_EXPECTED={lpe_canary}"
 """
             check_result = await self._run_ssm_command(ssm, instance_id, check_script)
 
             # Parse results
-            ace_found = "ACE_CANARY=" in check_result and len(check_result.split("ACE_CANARY=")[1].split("\n")[0].strip()) > 0
-            lpe_found = f"LPE_CANARY={lpe_canary}" not in check_result  # if LPE canary was modified, exploit succeeded
+            # ACE: PoC must have written content to the initially-empty canary_ace.txt
+            ace_found = False
+            if "ACE_CANARY=" in check_result:
+                ace_value = check_result.split("ACE_CANARY=")[1].split("\n")[0].strip()
+                ace_found = len(ace_value) > 0
+
+            # LPE: PoC must have read the SYSTEM-only canary and echoed it in its output.
+            # The PoC stdout is captured in poc_result. If the lpe_canary value appears
+            # in the PoC output, the exploit successfully escalated to read the file.
+            lpe_found = lpe_canary in poc_result
 
             success = ace_found or lpe_found
             verified_level = "lpe" if lpe_found else ("ace" if ace_found else None)

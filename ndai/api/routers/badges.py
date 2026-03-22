@@ -53,7 +53,10 @@ async def purchase_badge(
     if identity.has_badge:
         raise HTTPException(status_code=400, detail="Already have a badge")
 
-    # TODO: Phase 2 — verify tx_hash on-chain via VerificationDepositClient.has_badge()
+    # SECURITY TODO: Verify tx_hash on-chain via VerificationDepositClient.has_badge()
+    # before granting the badge. Without this, anyone can submit a fake tx_hash
+    # and get a badge for free, bypassing escrow on all future proposals.
+    # Phase 2 must call: client.has_badge(request.eth_address) and verify it returns True.
     identity.has_badge = True
     identity.badge_type = "purchased"
     identity.badge_tx_hash = request.tx_hash
@@ -78,6 +81,11 @@ async def check_badge(
     db: AsyncSession = Depends(get_db),
 ):
     """Check if a pubkey has a badge (public lookup)."""
+    # Validate pubkey_hex is a valid 64-char hex string (Ed25519 public key)
+    import re
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", pubkey_hex):
+        raise HTTPException(status_code=400, detail="Invalid pubkey format — must be 64 hex characters")
+
     result = await db.execute(
         select(VulnIdentity).where(VulnIdentity.public_key == pubkey_hex)
     )

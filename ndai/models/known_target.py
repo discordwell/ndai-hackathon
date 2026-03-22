@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -53,9 +53,14 @@ class KnownTarget(Base):
 
 class TargetBuild(Base):
     __tablename__ = "target_builds"
+    __table_args__ = (
+        Index("ix_target_builds_target_id", "target_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    target_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("known_targets.id"), nullable=False
+    )
     version: Mapped[str] = mapped_column(String(100), nullable=False)
     build_type: Mapped[str] = mapped_column(String(20), nullable=False)  # "eif" | "docker" | "ami"
     cache_key: Mapped[str] = mapped_column(String(64), nullable=False)

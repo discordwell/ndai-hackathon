@@ -70,8 +70,13 @@ async def get_target(
     """Get target detail with build status and PoC instructions."""
     import uuid as _uuid
 
+    try:
+        target_uuid = _uuid.UUID(target_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid target_id format")
+
     result = await db.execute(
-        select(KnownTarget).where(KnownTarget.id == _uuid.UUID(target_id))
+        select(KnownTarget).where(KnownTarget.id == target_uuid)
     )
     target = result.scalar_one_or_none()
     if not target:
@@ -118,9 +123,14 @@ async def list_target_builds(
     """List builds for a target."""
     import uuid as _uuid
 
+    try:
+        target_uuid = _uuid.UUID(target_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid target_id format")
+
     result = await db.execute(
         select(TargetBuild)
-        .where(TargetBuild.target_id == _uuid.UUID(target_id))
+        .where(TargetBuild.target_id == target_uuid)
         .order_by(TargetBuild.built_at.desc())
         .limit(20)
     )

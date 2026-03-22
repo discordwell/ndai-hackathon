@@ -17,7 +17,6 @@ from ndai.api.schemas.known_target import (
     ProposalCreateRequest,
     ProposalDetailResponse,
     ProposalResponse,
-    ProposalStatusResponse,
 )
 from ndai.db.session import get_db, get_db_context
 from ndai.models.known_target import KnownTarget
@@ -232,10 +231,12 @@ async def confirm_deposit(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid proposal_id format")
 
+    # Use SELECT ... FOR UPDATE to prevent race conditions — two concurrent
+    # confirm-deposit requests could otherwise both see "pending_deposit".
     result = await db.execute(
-        select(VerificationProposal).where(
-            VerificationProposal.id == proposal_uuid
-        )
+        select(VerificationProposal)
+        .where(VerificationProposal.id == proposal_uuid)
+        .with_for_update()
     )
     proposal = result.scalar_one_or_none()
     if not proposal:
@@ -282,10 +283,17 @@ async def trigger_verification(
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger verification for a proposal. Requires deposit confirmed or badge."""
+    try:
+        proposal_uuid = uuid.UUID(proposal_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid proposal_id format")
+
+    # Use SELECT ... FOR UPDATE to prevent race conditions on status transitions.
+    # Two concurrent verify requests would otherwise both see "queued" and proceed.
     result = await db.execute(
-        select(VerificationProposal).where(
-            VerificationProposal.id == uuid.UUID(proposal_id)
-        )
+        select(VerificationProposal)
+        .where(VerificationProposal.id == proposal_uuid)
+        .with_for_update()
     )
     proposal = result.scalar_one_or_none()
     if not proposal:
@@ -309,8 +317,10 @@ async def trigger_verification(
     _verification_statuses[proposal_id] = {"status": "building"}
     await _emit_progress(proposal_id, "building", {"message": "Preparing verification environment..."})
 
-    # Queue async verification (dispatched in background)
-    asyncio.create_task(_run_verification(str(proposal.id), db))
+    # Queue async verification in background with its own DB session.
+    # The request-scoped db session will be closed when this handler returns,
+    # so the background task must create its own session.
+    asyncio.create_task(_run_verification(str(proposal.id)))
 
     return {"status": "building", "message": "Verification started"}
 
@@ -324,9 +334,14 @@ async def stream_verification(
     """SSE stream for real-time verification progress."""
     pubkey = decode_zk_token(token)
 
+    try:
+        proposal_uuid = uuid.UUID(proposal_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid proposal_id format")
+
     result = await db.execute(
         select(VerificationProposal).where(
-            VerificationProposal.id == uuid.UUID(proposal_id)
+            VerificationProposal.id == proposal_uuid
         )
     )
     proposal = result.scalar_one_or_none()
@@ -372,8 +387,11 @@ async def _emit_progress(proposal_id: str, phase: str, data: dict | None = None)
             pass
 
 
-async def _run_verification(proposal_id: str, db: AsyncSession):
+async def _run_verification(proposal_id: str):
     """Background task: dispatch verification to the correct backend.
+
+    Uses its own DB session since request-scoped sessions are closed by the
+    time this background task runs.
 
     This is a placeholder — Phase 3 wires in the real verification dispatcher.
     """
@@ -385,6 +403,19 @@ async def _run_verification(proposal_id: str, db: AsyncSession):
         # For now, mark as manual_review
         await asyncio.sleep(1)  # simulate work
 
+        # Persist status to the database using a dedicated session
+        async with get_db_context() as db:
+            result = await db.execute(
+                select(VerificationProposal)
+                .where(VerificationProposal.id == uuid.UUID(proposal_id))
+                .with_for_update()
+            )
+            proposal = result.scalar_one_or_none()
+            if proposal:
+                proposal.status = "manual_review"
+                proposal.error_details = "Verification dispatch not yet connected. Marked for manual review."
+                await db.commit()
+
         await _emit_progress(proposal_id, "manual_review", {
             "message": "Verification dispatch not yet connected. Marked for manual review.",
         })
@@ -392,5 +423,21 @@ async def _run_verification(proposal_id: str, db: AsyncSession):
 
     except Exception as e:
         logger.exception("Verification failed for proposal %s", proposal_id)
+        # Persist error status to the database
+        try:
+            async with get_db_context() as db:
+                result = await db.execute(
+                    select(VerificationProposal)
+                    .where(VerificationProposal.id == uuid.UUID(proposal_id))
+                    .with_for_update()
+                )
+                proposal = result.scalar_one_or_none()
+                if proposal:
+                    proposal.status = "failed"
+                    proposal.error_details = str(e)[:2000]
+                    await db.commit()
+        except Exception:
+            logger.exception("Failed to persist error status for proposal %s", proposal_id)
+
         await _emit_progress(proposal_id, "error", {"message": str(e)})
         _verification_statuses[proposal_id] = {"status": "error", "error": str(e)}
