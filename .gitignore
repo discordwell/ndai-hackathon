@@ -17,6 +17,8 @@ env/
 node_modules/
 frontend/dist/
 frontend/build/
+zdayzk-frontend/dist/
+zdayzk-frontend/node_modules/
 .pytest_cache/
 .hypothesis/
 .mypy_cache/
@@ -32,3 +34,5 @@ oldpad.md
 contracts/out/
 contracts/cache/
 .worktrees/
+.superpowers/
+scripts/mind_address.py

@@ -1,0 +1,16 @@
+[Unit]
+Description=ZDayZK — Zero-Day Marketplace
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/zdayzk
+Environment=PATH=/opt/zdayzk/.venv/bin:/usr/local/bin:/usr/bin
+EnvironmentFile=/opt/zdayzk/.env
+ExecStart=/opt/zdayzk/.venv/bin/uvicorn ndai.api.app:create_app --factory --host 127.0.0.1 --port 8101 --workers 1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

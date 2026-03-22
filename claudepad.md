@@ -2,6 +2,17 @@
 
 ## Session Summaries
 
+### 2026-03-23T07:00Z — zdayzk.com: Standalone Zero-Day Marketplace Frontend
+- Built complete standalone frontend for zdayzk.com at `zdayzk-frontend/` — React 19 + TypeScript + Tailwind CSS, esbuild-bundled
+- **Design**: Dark premium theme (surface-950 dark bg, gold accent-400, glass-morphism cards, system fonts for CSP/privacy safety)
+- **Pages**: Landing (hero, how-it-works, trust signals, footer), Login/Register, Dashboard (unified dual-role), Marketplace (listings + filters + severity meter), Listing Detail + propose deal, Submit Vulnerability (3-step form), Deals List, Deal Page (status timeline + SSE live negotiation + outcome card + escrow panel + sealed delivery)
+- **Architecture**: 44 source files — design system (Button, Card, Badge, Input, Select, Modal, Spinner), API client layer (typed fetch + JWT), AuthContext (zdayzk_token, no role concept), WalletContext placeholder (MetaMask optional), useNegotiationStream (SSE), useEscrow (ethers.js v6 VulnEscrow interaction), hash-based router, PublicLayout + AppLayout with sidebar
+- **Backend changes**: Dual-role "user" registration (auth.py accepts role="user", default in schema), FRONTEND_DIR env var in app.py, Alembic migration for role server default
+- **Deploy infra**: zdayzk.service (port 8101, workers 1 for SSE), Caddyfile.zdayzk (auto HTTPS), deploy-zdayzk.sh, setup-zdayzk.sh (shared DB, SSO via same SECRET_KEY). DNS: A records for zdayzk.com → 15.204.59.61
+- **Code review fixes**: Removed Google Fonts CDN (CSP/privacy violation), fixed flex+block conflict, set workers=1 for SSE
+- **Note**: Frontend currently wired to old `/vulns/` API — needs rewiring to `/zk-vulns/` if ZK auth is the intended auth model for zdayzk.com
+- 4 new unit tests (dual-role schema), frontend builds clean (684K dist)
+
 ### 2026-03-22T23:00Z — CVE-2024-3094 Demo: Full Marketplace Lifecycle
 - Built end-to-end hackathon PoC using XZ Utils backdoor (CVSS 10.0, March 2024) as showcase
 - **Backdoor reproduction** (`demo/xz_backdoor/`): Faithful reproduction of attack pattern — liblzma LD_PRELOAD hook → RSA_public_decrypt interception → Ed448-signed command execution. Uses known test keypair, omits stealth obfuscation. Includes: backdoor_hook.c (~200 LOC), trigger_service.c, poc_trigger.py, Dockerfile.target, Ed448 key generation.

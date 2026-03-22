@@ -10,9 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from ndai.api.routers import agreements, auth, inventions, negotiations, poker, secrets, transcripts, vulns, vuln_verify, vuln_demo, delivery
+from ndai.api.routers import agreements, auth, bounties, inventions, negotiations, poker, rfps, secrets, transcripts, vulns, vuln_verify, vuln_demo, delivery, zk_auth, zk_vulns
 
-FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+_frontend_override = os.environ.get("FRONTEND_DIR", "")
+FRONTEND_DIST = Path(_frontend_override) if _frontend_override else Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,13 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    from ndai.config import settings
+
+    if settings.privacy_mode:
+        from ndai.api.middleware.privacy import PrivacyMiddleware, CSPMiddleware
+        app.add_middleware(PrivacyMiddleware)
+        app.add_middleware(CSPMiddleware)
+
     app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
     app.include_router(inventions.router, prefix="/api/v1/inventions", tags=["inventions"])
     app.include_router(agreements.router, prefix="/api/v1/agreements", tags=["agreements"])
@@ -54,7 +62,11 @@ def create_app() -> FastAPI:
     app.include_router(vulns.router, prefix="/api/v1/vulns", tags=["vulnerabilities"])
     app.include_router(vuln_verify.router, prefix="/api/v1/vuln-verify", tags=["vuln-verify"])
     app.include_router(vuln_demo.router, prefix="/api/v1/vuln-demo", tags=["vuln-demo"])
+    app.include_router(rfps.router, prefix="/api/v1/rfps", tags=["rfps"])
     app.include_router(delivery.router, prefix="/api/v1/delivery", tags=["delivery"])
+    app.include_router(zk_auth.router, prefix="/api/v1/zk-auth", tags=["zk-auth"])
+    app.include_router(zk_vulns.router, prefix="/api/v1/zk-vulns", tags=["zk-vulnerabilities"])
+    app.include_router(bounties.router, prefix="/api/v1/bounties", tags=["bounties"])
 
     @app.get("/health")
     async def health():

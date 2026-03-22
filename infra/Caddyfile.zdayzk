@@ -1,0 +1,28 @@
+# ZDayZK — zdayzk.com
+# Copy to /etc/caddy/sites/zdayzk.com on ovh2
+
+zdayzk.com, www.zdayzk.com {
+	encode gzip
+
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy localhost:8101
+	}
+
+	handle /health {
+		reverse_proxy localhost:8101
+	}
+
+	handle {
+		root * /opt/zdayzk/zdayzk-frontend/dist
+		try_files {path} /index.html
+		file_server
+	}
+}

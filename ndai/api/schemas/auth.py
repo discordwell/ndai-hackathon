@@ -6,7 +6,7 @@ from pydantic import BaseModel, EmailStr
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
-    role: str  # seller, buyer
+    role: str = "user"  # seller, buyer, user (dual-role)
     display_name: str | None = None
 
 

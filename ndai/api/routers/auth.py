@@ -14,8 +14,8 @@ router = APIRouter()
 
 @router.post("/register", response_model=TokenResponse)
 async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    if request.role not in ("seller", "buyer"):
-        raise HTTPException(status_code=400, detail="Role must be 'seller' or 'buyer'")
+    if request.role not in ("seller", "buyer", "user"):
+        raise HTTPException(status_code=400, detail="Role must be 'seller', 'buyer', or 'user'")
 
     existing = await get_user_by_email(db, request.email)
     if existing:
