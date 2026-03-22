@@ -240,12 +240,11 @@
 
 ## Build Plan: Production Sealed Verification
 
-### Phase 1: Fix Enclave Boot (BLOCKING)
-The Nitro enclave crashes immediately after launch ("hang-up event"). Debug the EIF:
-- Run with `--debug-mode`, capture console output
-- Likely cause: missing pip dependency in `enclave-build/Dockerfile` or import error in `ndai.enclave.app`
-- Test: `nitro-cli run-enclave` stays up, responds to vsock ping on port 5000
-- Files: `enclave-build/Dockerfile`, `ndai/enclave/app.py`
+### Phase 1: Fix Enclave Boot ~~(BLOCKING)~~ DONE
+Root cause: `execvpe: python: No such file or directory` — amazonlinux:2023 has `python3.11` but no `python` symlink. Fixed by adding `ln -sf` in Dockerfile. Enclave now boots, responds to vsock ping, returns real Nitro attestation with PCR0 matching on-chain value.
+- Enclave CID: dynamic (check `nitro-cli describe-enclaves`)
+- PCR0 (v1.0.1): `524244ce6b8defa452bbca548bd6434720f77e4a16f00d27f441e04e2c48662a0d9c22e5f0aee96eee0a036a83fab70e`
+- Note: COSE Sign1 signature verification has a bug in `ndai/tee/attestation.py` — the cert chain validation fails but the data (PCR0, public key, nonce) is correct. Needs debugging.
 
 ### Phase 2: Real Nitro Attestation E2E
 Once enclave boots:
