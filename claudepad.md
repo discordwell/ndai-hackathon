@@ -2,6 +2,27 @@
 
 ## Session Summaries
 
+### 2026-03-23T23:00Z — Sealed Verification Pipeline + PCR0 On-Chain + Architecture Overhaul
+- Consolidated `zdayzk-frontend/` into `frontend-zk/` (deleted 5,587 lines of dead code)
+- Fixed vulns API: repointed frontend from `/vulns/` to `/zk-vulns/` (ZK auth), added ALGORITHMIC vs DECLARATIVE field distinction
+- Added 3 new known targets: Apache httpd, XZ Utils (CVE-2024-3094), OpenSSH Server
+- **Wired verification pipeline**: replaced `_run_verification()` stub with real `VulnVerificationProtocol` calls. Tested E2E: ACE capability verified with 100% reliability via canary oracle
+- **CVE-2024-3094 live reproduction**: built XZ backdoor Docker target on AWS, ran Ed448-signed PoC through trigger service, canary matched — pre-auth RCE verified
+- **Sealed PoC submission**: sellers encrypt exploits to enclave's attested P-384 key (ECIES). DB stores only ciphertext. 4-step frontend: Write PoC → Seal to Enclave → Escrow → Verify
+- `GET /enclave/attestation` endpoint: returns COSE Sign1 doc with enclave pubkey, PCR0, nonce
+- Browser ECIES via `@noble/curves/p384` + Web Crypto AES-256-GCM
+- **PCR0Registry.sol** deployed to Ethereum Sepolia at `0x6A2Af53235dAe573c8F2AfbBa58C666fB4868222`. PCR0 published on-chain: `6e36faff...fd473c06`
+- AWS Nitro EC2 launched (i-0cb74c9cce9e46cc6, c5.xlarge), EIF built, PCR values recorded. Enclave crashes on boot (needs debugging)
+- Updated ARCHITECTURE.md with full sealed verification flow diagram + operator attack surface table
+
+### 2026-03-23T21:30Z — Hacker CLI + Verification Docs
+- Built `scripts/ndai_submit.py`: interactive CLI for submitting exploits (Ed25519 auth, target selection, PoC upload, capability claim, verification polling with spinner)
+- `docs/SUBMIT_GUIDE.md`: step-by-step submission guide covering CLI usage, API reference, canary locations, deposit flow
+- `docs/NITRO_VERIFICATION.md`: explains oracle system, enclave flow, PCR attestation, buyer overlay, local testing (simulated/Docker/Nitro modes), architecture diagram, security model
+- CLI supports both interactive and one-shot modes (`--target`, `--poc-file`, `--capability`, `--dry-run`)
+- Key management: auto-generates Ed25519 keypair at `~/.ndai/key.hex`
+- AWS Nitro instance launched (i-0cb74c9cce9e46cc6) via deploy/launch.sh, setup pending server recovery
+
 ### 2026-03-23T18:00Z — Known Targets + Verification Proposals + Anti-Spam Escrow + Badge System
 - Built the AWS compute flow: platform-maintained target catalog, anti-spam deposit escrow, and ⚡ reputation badges
 - **Known Targets**: 5 pre-seeded targets (Chrome, Firefox, Ubuntu, Windows, iOS) with platform-specific verification methods (Nitro Enclave for Linux, EC2 VM for Windows, Corellium stub for iOS)
@@ -216,3 +237,71 @@
 - With paper defaults (k=3, p=0.005, C=7.5B), Phi ≈ 340M — much larger than omega ∈ [0,1), so security capacity is never binding for normalized values
 - Hybrid constraint enforcement is critical: hard constraints in code, soft decisions via LLM. Final price always Nash bargaining formula.
 - SimulatedTEEProvider uses async queues; production NitroEnclaveProvider uses AF_VSOCK + nitro-cli
+
+## Build Plan: Production Sealed Verification
+
+### Phase 1: Fix Enclave Boot (BLOCKING)
+The Nitro enclave crashes immediately after launch ("hang-up event"). Debug the EIF:
+- Run with `--debug-mode`, capture console output
+- Likely cause: missing pip dependency in `enclave-build/Dockerfile` or import error in `ndai.enclave.app`
+- Test: `nitro-cli run-enclave` stays up, responds to vsock ping on port 5000
+- Files: `enclave-build/Dockerfile`, `ndai/enclave/app.py`
+
+### Phase 2: Real Nitro Attestation E2E
+Once enclave boots:
+- `GET /enclave/attestation` returns AWS-hardware-signed COSE Sign1
+- Seller verifies cert chain → AWS Nitro Root CA
+- PCR0 matches on-chain value at `0x6A2Af53235dAe573c8F2AfbBa58C666fB4868222`
+- Test: curl attestation endpoint, verify with `ndai/tee/attestation.py`
+- Files: `ndai/api/routers/enclave.py` (vsock attestation path already written)
+
+### Phase 3: Target Inspection Access
+Give sellers a way to inspect the target environment before submitting:
+- API endpoint: `GET /proposals/{id}/environment` — returns installed packages, service configs, file listings from the running target
+- Or: web-based terminal (xterm.js) proxied through the API to a sandbox container (NOT the enclave — just a matching Docker container for inspection)
+- Seller can verify the build spec matches reality
+- Files: new API endpoint, optional frontend terminal component
+
+### Phase 4: Go-Code Commitment
+When seller triggers verification ("go code"):
+- Compute `SHA-256(sealed_poc)`
+- Publish hash on-chain via `PCR0Registry` or a new `CommitmentRegistry` contract
+- Both seller and platform have the same ciphertext hash — neither can later dispute what was submitted
+- Write access is revoked (proposal status → "sealed", no further modification allowed)
+- Files: `ndai/api/routers/proposals.py` (trigger_verification), new Solidity contract or extend PCR0Registry
+
+### Phase 5: Verified Listing Auto-Creation
+When verification passes:
+- Auto-create a `ZKVulnerability` marketplace listing with:
+  - Verified capability badge (ACE/LPE/etc.)
+  - Attestation PCR0 + chain hash
+  - Reliability score
+  - Link to on-chain commitment
+- Refund escrow deposit
+- Award badge if first verification
+- Files: `ndai/api/routers/proposals.py` (post-verification hook), `ndai/models/zk_vulnerability.py`
+
+### Phase 6: Buyer Purchase + Sealed Delivery
+When a buyer initiates a deal on a verified listing:
+1. Buyer deposits ETH to escrow contract
+2. Buyer provides their P-384 public key
+3. Enclave re-encrypts exploit: `seal(exploit_plaintext, buyer_pubkey)` → `SealedDelivery`
+4. Delivery ciphertext hash published on-chain
+5. Buyer downloads encrypted exploit + encrypted delivery key
+6. Buyer decrypts with their private key
+7. Escrow releases to seller
+- Files: `ndai/enclave/vuln_verify/sealed_delivery.py` (exists), `ndai/api/routers/delivery.py` (exists), connect to verified proposals pipeline
+
+### Phase 7: nitro-verify CLI Package
+Ship a pip-installable package sellers can run locally:
+- `ndai-seal attest https://api.zdayzk.com` — fetch and verify attestation (cert chain, PCR0)
+- `ndai-seal encrypt --poc exploit.sh --attestation attest.bin` — ECIES encrypt to enclave key
+- `ndai-seal submit --sealed sealed.bin --target apache-httpd` — submit to API
+- Reuses `ndai/tee/attestation.py` and `ndai/enclave/ephemeral_keys.py`
+- Files: new `ndai-seal/` directory with setup.py
+
+### Infrastructure
+- **AWS**: c5.xlarge (i-0cb74c9cce9e46cc6) at 32.192.236.206, EIF built, PCRs recorded
+- **OVH (zdayzk.com)**: frontend + API only, TEE_MODE=simulated, refuses sealed_poc in production
+- **On-chain**: PCR0Registry at `0x6A2Af53235dAe573c8F2AfbBa58C666fB4868222` (Ethereum Sepolia)
+- **Deployer**: `0x903a3Af438d1b5cb60b9003737cfF0DD86C21785`

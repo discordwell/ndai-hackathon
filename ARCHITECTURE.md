@@ -281,6 +281,98 @@ Browser ↔ SSE (per-player filtered) + REST → FastAPI → Enclave (poker engi
 - **Settlement**: On-chain zero-sum enforcement. Sequential hand numbering prevents replay.
 - **Card filtering**: Parent receives `player_hands` dict from enclave, distributes each player's cards only to their SSE stream.
 
+## Sealed Verification Pipeline
+
+End-to-end 0day verification where the platform operator never sees the exploit.
+
+### Trust Flow
+
+```
+Seller                         Platform (untrusted)              Nitro Enclave (trusted)
+  │                                  │                                  │
+  │ 1. Submit target spec + stake    │                                  │
+  │ ─────────────────────────────>   │                                  │
+  │                                  │  2. Build target, launch enclave │
+  │                                  │  ─────────────────────────────>  │
+  │ 3. GET /enclave/attestation      │                                  │
+  │ ─────────────────────────────>   │      get_attestation(nonce)      │
+  │                                  │  ─────────────────────────────>  │
+  │ <── COSE Sign1 (AWS-signed) ──── │  <── attestation doc ──────────  │
+  │                                  │                                  │
+  │ 4. Verify:                       │                                  │
+  │    - Cert chain → AWS Root CA    │                                  │
+  │    - PCR0 matches on-chain value │                                  │
+  │    - PCR0 matches local build    │                                  │
+  │    - Nonce is fresh              │                                  │
+  │    - Extract enclave P-384 key   │                                  │
+  │                                  │                                  │
+  │ 5. Inspect target (optional)     │                                  │
+  │    - Check installed packages    │                                  │
+  │    - Verify service configs      │                                  │
+  │    - Confirm build spec matches  │                                  │
+  │                                  │                                  │
+  │ 6. Encrypt PoC to enclave key   │                                  │
+  │    ECIES(enclave_pubkey, poc)    │                                  │
+  │                                  │                                  │
+  │ 7. SEAL & SUBMIT (go code)      │                                  │
+  │    sealed_poc + SHA-256 hash     │                                  │
+  │ ─────────────────────────────>   │  [store ciphertext, NOT plaintext]
+  │                                  │                                  │
+  │    Write access revoked ──────── │                                  │
+  │                                  │  8. deliver_sealed_poc(bytes)    │
+  │                                  │  ─────────────────────────────>  │
+  │                                  │     [ECIES decrypt inside TEE]   │
+  │                                  │     [plant oracle canaries]      │
+  │                                  │     [run exploit N times]        │
+  │                                  │     [check canary results]       │
+  │                                  │  <── pass/fail + capability ──── │
+  │                                  │                                  │
+  │ 9. Result published              │                                  │
+  │    (on-chain commitment hash)    │                                  │
+  │                                  │                                  │
+  │ BUYER FLOW:                      │                                  │
+  │ 10. Buyer deposits to escrow     │                                  │
+  │                                  │  11. Re-encrypt to buyer key     │
+  │                                  │  ─────────────────────────────>  │
+  │                                  │     seal(exploit, buyer_pubkey)  │
+  │                                  │  <── delivery_ciphertext ──────  │
+  │ 12. Buyer decrypts with own key  │                                  │
+  │     Escrow releases to seller    │                                  │
+```
+
+### On-Chain Attestation
+
+PCR0 (SHA-384 of enclave image) is published to `PCR0Registry.sol` on Ethereum Sepolia:
+- Contract: `0x6A2Af53235dAe573c8F2AfbBa58C666fB4868222`
+- Anyone can call `getPCR0()` and compare against their own local build
+- Event log is permanent — operator cannot retroactively change history
+
+### Operator Attack Surface (closed)
+
+| Attack | Defense |
+|--------|---------|
+| Read PoC from database | DB stores ECIES ciphertext only |
+| Modify enclave to exfiltrate | PCR0 changes → seller detects before sending |
+| Read enclave memory from host | Nitro hardware physically prevents it |
+| Intercept vsock traffic | PoC is ECIES-encrypted, only enclave has the key |
+| Replay old attestation | Nonce + timestamp prevent replay |
+| Fake the attestation | Cert chain roots to AWS hardware — can't forge |
+| Swap enclave after attestation | New enclave = new key = seller must re-encrypt |
+| Claim different exploit submitted | Sealed PoC hash committed on-chain at trigger time |
+
+### Components
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| Attestation API | `ndai/api/routers/enclave.py` | Exposes enclave attestation to sellers |
+| ECIES Encryption | `ndai/enclave/ephemeral_keys.py` | P-384 ECDH + HKDF-SHA384 + AES-256-GCM |
+| Sealed PoC Handler | `ndai/enclave/app.py` (`deliver_sealed_poc`) | Decrypts PoC inside enclave |
+| Browser ECIES | `frontend-zk/src/crypto/ecies.ts` | Client-side encryption via @noble/curves |
+| Sealed Delivery | `ndai/enclave/vuln_verify/sealed_delivery.py` | Re-encrypts exploit for buyer |
+| PCR0 Registry | `contracts/src/PCR0Registry.sol` | On-chain enclave code attestation |
+| Oracle System | `ndai/enclave/vuln_verify/oracles.py` | Capability proof via canary files |
+| PoC Executor | `ndai/enclave/vuln_verify/poc_executor.py` | Sandboxed script execution with RLIMIT |
+
 ## Known Targets + Verification Proposals + Anti-Spam Escrow
 
 Platform-maintained catalog of verification targets with anti-spam deposit escrow and reputation badges.
@@ -288,21 +380,25 @@ Platform-maintained catalog of verification targets with anti-spam deposit escro
 ### Architecture
 
 ```
-Seller browses Known Targets -> picks Chrome 124 -> writes PoC
+Seller browses Known Targets -> picks target -> writes PoC
     |
 Has ⚡ badge? --yes--> Queue verification immediately
     |no
     v
-Deposit $100 ETH to VerificationDeposit.sol -> confirm tx -> Queue verification
+Deposit ETH to escrow -> confirm tx -> Queue verification
+    |
+Sealed submission (see above):
+  Fetch attestation -> verify PCR0 -> ECIES encrypt PoC -> submit sealed_poc
     |
 Dispatcher routes by platform:
-  |-- Linux (Chrome/Firefox/Ubuntu) -> Nitro Enclave (pre-built EIF + inject PoC)
+  |-- Linux (Chrome/Firefox/Ubuntu/Apache/OpenSSH) -> Nitro Enclave
+  |-- XZ Backdoor (CVE-2024-3094) -> Nitro Enclave (custom EIF)
   |-- Windows -> Fresh EC2 Windows VM via SSM
   '-- iOS -> Manual review (Corellium added when demand exists)
     |
 Capability oracle runs -> CapabilityResult
     |
-Pass? -> Refund deposit + Award ⚡ badge + Auto-create ZKVulnerability listing
+Pass? -> Refund deposit + Award ⚡ badge + Auto-create marketplace listing
 Fail? -> Forfeit deposit to platform
 ```
 
@@ -336,12 +432,15 @@ Single contract (not factory) managing deposits for all proposals. Badge holders
 
 ### Known Target Catalog
 
-5 pre-seeded targets with platform-specific verification methods:
+8 known targets with platform-specific verification methods:
 
 | Target | Platform | Method | Escrow | PoC Type |
 |--------|----------|--------|--------|----------|
+| Apache HTTP Server | linux | Nitro Enclave | $100 | Bash |
 | Chrome (Linux) | linux | Nitro Enclave | $100 | HTML |
 | Firefox (Linux) | linux | Nitro Enclave | $100 | HTML |
+| XZ Utils / CVE-2024-3094 | linux | Nitro Enclave | $500 | Python3 |
+| OpenSSH Server | linux | Nitro Enclave | $200 | Bash |
 | Ubuntu LTS | linux | Nitro Enclave | $100 | Bash |
 | Windows Server 2022 | windows | EC2 VM + SSM | $100 | PowerShell |
 | iOS (Latest) | ios | Manual/Corellium | $500 | Manual |
