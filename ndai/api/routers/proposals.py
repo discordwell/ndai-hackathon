@@ -361,7 +361,7 @@ async def stream_verification(
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=30.0)
                     yield f"event: {event['phase']}\ndata: {json.dumps(event['data'])}\n\n"
-                    if event["phase"] in ("passed", "failed", "error"):
+                    if event["phase"] in ("result", "error_event"):
                         break
                 except TimeoutError:
                     yield ": keepalive\n\n"
@@ -388,56 +388,126 @@ async def _emit_progress(proposal_id: str, phase: str, data: dict | None = None)
 
 
 async def _run_verification(proposal_id: str):
-    """Background task: dispatch verification to the correct backend.
+    """Background task: run capability-oracle verification against a known target.
 
-    Uses its own DB session since request-scoped sessions are closed by the
-    time this background task runs.
-
-    This is a placeholder — Phase 3 wires in the real verification dispatcher.
+    Calls VulnVerificationProtocol directly (simulated mode — no enclave needed).
+    Emits SSE events matching the frontend VerificationProgress component:
+    building → build_done → verifying → verify_done → result | error_event
     """
     try:
-        await _emit_progress(proposal_id, "verifying", {"message": "Running capability oracle..."})
+        # 1. Load proposal + target
+        async with get_db_context() as db:
+            prop_result = await db.execute(
+                select(VerificationProposal).where(
+                    VerificationProposal.id == uuid.UUID(proposal_id)
+                )
+            )
+            proposal = prop_result.scalar_one_or_none()
+            if not proposal:
+                raise RuntimeError(f"Proposal {proposal_id} not found")
+
+            target_result = await db.execute(
+                select(KnownTarget).where(KnownTarget.id == proposal.target_id)
+            )
+            target = target_result.scalar_one_or_none()
+            if not target:
+                raise RuntimeError(f"Target {proposal.target_id} not found")
+
+            # Snapshot fields needed after session closes
+            prop_poc_script = proposal.poc_script
+            prop_poc_script_type = proposal.poc_script_type
+            prop_claimed_capability = proposal.claimed_capability
+            prop_reliability_runs = proposal.reliability_runs
+            prop_target_id = proposal.target_id
+            prop_id = proposal.id
+
+        # 2. Build TargetSpec from KnownTarget + proposal
+        await _emit_progress(proposal_id, "building", {"message": "Constructing target specification..."})
+        _verification_statuses[proposal_id] = {"status": "building"}
+
+        from ndai.services.nitro_verifier import NitroVerifier
+        verifier = NitroVerifier()
+        target_spec = verifier.build_target_spec(target, proposal)
+
+        await _emit_progress(proposal_id, "build_done", {"message": "Target specification ready."})
+
+        # 3. Create protocol components (simulated mode — no RLIMIT enforcement)
+        from ndai.enclave.vuln_verify.protocol import VulnVerificationProtocol
+        from ndai.enclave.vuln_verify.poc_executor import PoCExecutor
+        from ndai.enclave.vuln_verify.oracles import OracleManager
+
+        executor = PoCExecutor(enforce_rlimits=False)
+        oracle = OracleManager()
+        protocol = VulnVerificationProtocol(
+            spec=target_spec,
+            executor=executor,
+            oracle=oracle,
+        )
+
+        # 4. Run verification (synchronous protocol, run in thread)
+        await _emit_progress(proposal_id, "verifying", {"message": "Running capability oracles..."})
         _verification_statuses[proposal_id] = {"status": "verifying"}
 
-        # TODO: Phase 3 — import and call VerificationDispatcher here
-        # For now, mark as manual_review
-        await asyncio.sleep(1)  # simulate work
+        result = await asyncio.wait_for(
+            asyncio.to_thread(protocol.run),
+            timeout=300,  # 5 minute hard cap
+        )
 
-        # Persist status to the database using a dedicated session
+        # 5. Map VerificationResult to frontend-expected format
+        unpatched = result.unpatched_capability
+        passed = unpatched is not None and unpatched.verified_level is not None
+
+        result_json = {
+            "claimed_capability": prop_claimed_capability,
+            "verified_capability": unpatched.verified_level.value if passed and unpatched.verified_level else None,
+            "reliability_score": unpatched.reliability_score if unpatched else 0.0,
+            "passed": passed,
+            "error": None if passed else "Capability not verified by oracle",
+        }
+
+        # 6. Persist to DB
         async with get_db_context() as db:
-            result = await db.execute(
+            db_result = await db.execute(
                 select(VerificationProposal)
                 .where(VerificationProposal.id == uuid.UUID(proposal_id))
                 .with_for_update()
             )
-            proposal = result.scalar_one_or_none()
-            if proposal:
-                proposal.status = "manual_review"
-                proposal.error_details = "Verification dispatch not yet connected. Marked for manual review."
+            prop = db_result.scalar_one_or_none()
+            if prop:
+                prop.status = "passed" if passed else "failed"
+                prop.verification_result_json = result_json
+                prop.verification_chain_hash = result.verification_chain_hash
+                prop.attestation_pcr0 = "simulated"
+                prop.error_details = None if passed else "Capability not verified by oracle"
                 await db.commit()
 
-        await _emit_progress(proposal_id, "manual_review", {
-            "message": "Verification dispatch not yet connected. Marked for manual review.",
-        })
-        _verification_statuses[proposal_id] = {"status": "manual_review"}
+        # 7. Emit terminal SSE events
+        await _emit_progress(proposal_id, "verify_done", {"message": "Oracle checks complete."})
+        await _emit_progress(proposal_id, "result", result_json)
+        _verification_statuses[proposal_id] = {"status": "passed" if passed else "failed"}
+
+        logger.info(
+            "Verification complete for proposal %s: passed=%s reliability=%.2f",
+            proposal_id, passed, result_json["reliability_score"],
+        )
 
     except Exception as e:
         logger.exception("Verification failed for proposal %s", proposal_id)
-        # Persist error status to the database
+        # Persist error status
         try:
             async with get_db_context() as db:
-                result = await db.execute(
+                db_result = await db.execute(
                     select(VerificationProposal)
                     .where(VerificationProposal.id == uuid.UUID(proposal_id))
                     .with_for_update()
                 )
-                proposal = result.scalar_one_or_none()
-                if proposal:
-                    proposal.status = "failed"
-                    proposal.error_details = str(e)[:2000]
+                prop = db_result.scalar_one_or_none()
+                if prop:
+                    prop.status = "failed"
+                    prop.error_details = str(e)[:2000]
                     await db.commit()
         except Exception:
             logger.exception("Failed to persist error status for proposal %s", proposal_id)
 
-        await _emit_progress(proposal_id, "error", {"message": str(e)})
+        await _emit_progress(proposal_id, "error_event", {"message": str(e)})
         _verification_statuses[proposal_id] = {"status": "error", "error": str(e)}
