@@ -35,10 +35,10 @@ def _verify_ed25519(public_key_hex: str, signature_hex: str, message: str) -> No
     try:
         pubkey_obj = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key_hex))
         pubkey_obj.verify(bytes.fromhex(signature_hex), message.encode())
-    except (InvalidSignature, ValueError, Exception) as exc:
+    except (InvalidSignature, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid signature: {exc}",
+            detail="Invalid signature",
         )
 
 
@@ -85,24 +85,24 @@ async def challenge(request: ZKChallengeRequest):
 @router.post("/verify", response_model=ZKVerifyResponse)
 async def verify(request: ZKVerifyRequest):
     """Verify a signed nonce challenge and return a JWT."""
-    # Look up nonce in Redis
+    # Verify Ed25519 signature FIRST (before consuming the nonce, so a bad
+    # signature doesn't waste the user's challenge)
+    message = f"NDAI_AUTH:{request.nonce}"
+    _verify_ed25519(request.public_key, request.signature, message)
+
+    # Atomically consume the nonce — redis DELETE returns the number of keys
+    # removed, so if two concurrent requests race, only one gets deleted=1.
     redis_client = await _get_redis()
     try:
         redis_key = f"zk_challenge:{request.public_key}:{request.nonce}"
-        exists = await redis_client.get(redis_key)
-        if not exists:
+        deleted = await redis_client.delete(redis_key)
+        if deleted == 0:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired nonce",
             )
-        # Delete nonce — one-time use
-        await redis_client.delete(redis_key)
     finally:
         await redis_client.aclose()
-
-    # Verify Ed25519 signature of 'NDAI_AUTH:{nonce}'
-    message = f"NDAI_AUTH:{request.nonce}"
-    _verify_ed25519(request.public_key, request.signature, message)
 
     # Issue JWT
     token = create_zk_token(request.public_key)

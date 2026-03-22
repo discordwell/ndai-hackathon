@@ -7,6 +7,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://ndai:ndai@localhost:
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
+from fastapi import HTTPException
 from jose import jwt
 
 from ndai.api.dependencies import (
@@ -91,13 +92,14 @@ class TestGetCurrentUser:
         assert result == "user-456"
 
     @pytest.mark.asyncio
-    async def test_get_current_user_also_accepts_zk_token(self):
-        """get_current_user does not reject ZK tokens — it only checks 'sub'."""
+    async def test_get_current_user_rejects_zk_token(self):
+        """get_current_user rejects ZK tokens to enforce auth boundary."""
         privkey, pubkey_hex = _generate_ed25519_keypair()
         token = create_zk_token(pubkey_hex)
 
-        result = await get_current_user(credentials=_FakeCredentials(token))
-        assert result == pubkey_hex
+        with pytest.raises(HTTPException) as exc_info:
+            await get_current_user(credentials=_FakeCredentials(token))
+        assert exc_info.value.status_code == 401
 
 
 class TestEd25519Verification:

@@ -64,7 +64,10 @@ def mock_redis():
         return store.get(key)
 
     async def _delete(key):
-        store.pop(key, None)
+        if key in store:
+            del store[key]
+            return 1  # Redis DELETE returns count of deleted keys
+        return 0
 
     redis.set = AsyncMock(side_effect=_set)
     redis.get = AsyncMock(side_effect=_get)
@@ -184,9 +187,9 @@ class TestFullZKAuthFlow:
         """Verify with a nonce that doesn't exist in Redis returns 401."""
         privkey, pubkey_hex = _generate_ed25519_keypair()
 
-        # Create mock Redis that returns None for any nonce (expired/missing)
+        # Create mock Redis that returns 0 for delete (nonce expired/missing)
         empty_redis = AsyncMock()
-        empty_redis.get = AsyncMock(return_value=None)
+        empty_redis.delete = AsyncMock(return_value=0)
         empty_redis.aclose = AsyncMock()
 
         fake_nonce = "a1b2c3d4" * 8

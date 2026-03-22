@@ -68,20 +68,16 @@ class TestBountyCreateRequest:
         assert any(e["loc"] == ("budget_eth",) for e in errors)
 
     def test_bounty_create_invalid_impact_type(self):
-        """desired_impact is a free-form str in the schema — no enum validation.
-
-        This test documents the current behavior: any string is accepted.
-        If the field is later changed to a Literal/Enum, this test should be
-        updated to assert a ValidationError for invalid values.
-        """
-        # Currently accepted because desired_impact is just `str`
-        req = BountyCreateRequest(
-            target_software="curl",
-            desired_impact="INVALID_TYPE",
-            budget_eth=2.0,
-            description="Testing invalid impact type",
-        )
-        assert req.desired_impact == "INVALID_TYPE"
+        """desired_impact uses Literal validation — only RCE|LPE|InfoLeak|DoS accepted."""
+        with pytest.raises(ValidationError) as exc_info:
+            BountyCreateRequest(
+                target_software="curl",
+                desired_impact="INVALID_TYPE",
+                budget_eth=2.0,
+                description="Testing invalid impact type",
+            )
+        errors = exc_info.value.errors()
+        assert any(e["loc"] == ("desired_impact",) for e in errors)
 
 
 class TestBountyRespondRequest:

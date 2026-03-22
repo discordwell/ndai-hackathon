@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ndai.api.dependencies import decode_token, get_zk_identity
+from ndai.api.dependencies import decode_zk_token, get_zk_identity
 from ndai.api.schemas.zk_vulnerability import (
     ZKVulnAgreementCreateRequest,
     ZKVulnAgreementResponse,
@@ -140,8 +140,20 @@ async def create_zk_agreement(
     vuln = result.scalar_one_or_none()
     if not vuln:
         raise HTTPException(status_code=404, detail="Vulnerability not found")
+    if vuln.status != "active":
+        raise HTTPException(status_code=400, detail="Vulnerability is not active")
     if vuln.seller_pubkey == pubkey:
         raise HTTPException(status_code=400, detail="Cannot buy your own vulnerability")
+
+    # Prevent duplicate agreements from same buyer on same vuln
+    existing = await db.execute(
+        select(ZKVulnAgreement).where(
+            ZKVulnAgreement.vulnerability_id == vuln.id,
+            ZKVulnAgreement.buyer_pubkey == pubkey,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Agreement already exists for this listing")
 
     agreement = ZKVulnAgreement(
         vulnerability_id=vuln.id,
@@ -299,13 +311,25 @@ async def start_zk_negotiation(
 @router.get("/negotiations/{agreement_id}/stream")
 async def stream_zk_negotiation(
     agreement_id: str,
-    token: str = Query(..., description="JWT token for SSE auth"),
+    token: str = Query(..., description="ZK JWT token for SSE auth"),
+    db: AsyncSession = Depends(get_db),
 ):
     """SSE stream for real-time ZK negotiation progress.
 
     Uses query param token because EventSource doesn't support Authorization headers.
+    Rejects non-ZK tokens and verifies caller is a party to the agreement.
     """
-    pubkey = decode_token(token)
+    pubkey = decode_zk_token(token)
+
+    # Verify caller is a party to this agreement
+    result = await db.execute(
+        select(ZKVulnAgreement).where(ZKVulnAgreement.id == uuid.UUID(agreement_id))
+    )
+    agreement = result.scalar_one_or_none()
+    if not agreement:
+        raise HTTPException(status_code=404, detail="Agreement not found")
+    if pubkey not in (agreement.seller_pubkey, agreement.buyer_pubkey):
+        raise HTTPException(status_code=403, detail="Not authorized")
 
     queue: asyncio.Queue = asyncio.Queue(maxsize=50)
     if agreement_id not in _progress_queues:

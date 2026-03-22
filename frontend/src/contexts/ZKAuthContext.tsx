@@ -6,6 +6,8 @@ interface ZKAuthState {
   publicKeyHex: string | null;
   isAuthenticated: boolean;
   isDerivingKey: boolean;
+  /** True when token exists from prior session but private key is gone (page reload). */
+  needsReauth: boolean;
 }
 
 interface ZKAuthContextValue extends ZKAuthState {
@@ -23,10 +25,15 @@ export function ZKAuthProvider({ children }: { children: React.ReactNode }) {
   const [auth, setAuth] = useState<ZKAuthState>(() => {
     const token = sessionStorage.getItem("zkToken");
     const pubkey = sessionStorage.getItem("zkPubkey");
+    // After page reload, token survives in sessionStorage but private key is
+    // gone. We mark this as needsReauth so the UI can prompt re-login rather
+    // than letting users hit confusing errors when signing operations fail.
+    const hasToken = !!token;
     return {
       publicKeyHex: pubkey,
-      isAuthenticated: !!token,
+      isAuthenticated: false, // require fresh login — private key is gone
       isDerivingKey: false,
+      needsReauth: hasToken, // show "re-enter passphrase" prompt
     };
   });
 
@@ -85,6 +92,7 @@ export function ZKAuthProvider({ children }: { children: React.ReactNode }) {
         publicKeyHex: id.publicKeyHex,
         isAuthenticated: true,
         isDerivingKey: false,
+        needsReauth: false,
       });
     } catch (e) {
       setAuth((prev) => ({ ...prev, isDerivingKey: false }));
@@ -96,7 +104,7 @@ export function ZKAuthProvider({ children }: { children: React.ReactNode }) {
     sessionStorage.removeItem("zkToken");
     sessionStorage.removeItem("zkPubkey");
     setIdentity(null);
-    setAuth({ publicKeyHex: null, isAuthenticated: false, isDerivingKey: false });
+    setAuth({ publicKeyHex: null, isAuthenticated: false, isDerivingKey: false, needsReauth: false });
   }, []);
 
   return (
