@@ -65,7 +65,7 @@ The **critical requirement**: the enclave plants a canary file that your exploit
 |---|---|---|---|
 | `ace` | `/var/lib/ndai-oracle/ace_canary` | 0644 (world-readable) | Code execution as service user |
 | `lpe` | `/var/lib/ndai-oracle/lpe_canary` | 0600 (root-only) | Privilege escalation to root |
-| `info_leak` | In process memory (`$NDAI_INFO_CANARY` env var) | Not on disk | Memory read from target process |
+| `info_leak` | `/var/lib/ndai-oracle/info_canary` (0600, root-only) + `$NDAI_INFO_CANARY` env var | Root-only on disk, also in process env | Memory read from target process |
 | `callback` | `/var/lib/ndai-oracle/callback_token` contains `host:port:token` | 0644 | Blind RCE — trigger outbound TCP |
 | `crash` | N/A | N/A | Target process dies with signal |
 | `dos` | N/A | N/A | Target stops responding to health checks |
@@ -88,7 +88,7 @@ result = subprocess.run(["cat", "/var/lib/ndai-oracle/ace_canary"], capture_outp
 print(result.stdout.decode())
 ```
 
-The canary value is **random each run** — you can't hardcode it. Your exploit must actually achieve the capability to read it.
+The canary value is a **64-character random hex string** (256 bits of entropy), regenerated each run — you can't hardcode it. Your exploit must actually achieve the capability to read it.
 
 ### 4. Submit
 

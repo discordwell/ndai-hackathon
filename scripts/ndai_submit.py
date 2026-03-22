@@ -132,9 +132,11 @@ class NDAIClient:
         """Ed25519 challenge-response auth. Returns JWT."""
         pk = privkey.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
 
-        # Register (idempotent)
+        # Register (idempotent — 409 is fine, other errors are not)
         reg_sig = privkey.sign(f"NDAI_REGISTER:{pk}".encode()).hex()
-        self.api("POST", "/zk-auth/register", {"public_key": pk, "signature": reg_sig})
+        _, status, err = self.api("POST", "/zk-auth/register", {"public_key": pk, "signature": reg_sig})
+        if err and status != 409:
+            raise RuntimeError(f"Registration failed ({status}): {err}")
 
         # Challenge
         ch, _, err = self.api("POST", "/zk-auth/challenge", {"public_key": pk})
@@ -176,6 +178,7 @@ def load_or_create_key(key_path: Path | None) -> Ed25519PrivateKey:
     success(f"Generated new Ed25519 keypair → {path}")
     pk = privkey.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
     info(f"Public key: {pk[:16]}...{pk[-8:]}")
+    warn(f"Key is unencrypted on disk. Protect {path} — it controls your marketplace identity.")
     return privkey
 
 
@@ -221,6 +224,10 @@ def get_poc_script(target: dict, poc_file: str | None) -> str:
         path = Path(poc_file)
         if not path.exists():
             fail(f"PoC file not found: {poc_file}")
+            sys.exit(1)
+        size = path.stat().st_size
+        if size > 262144:
+            fail(f"PoC file too large ({size} bytes, max 256KB)")
             sys.exit(1)
         script = path.read_text()
         info(f"Loaded PoC from {poc_file} ({len(script)} bytes)")

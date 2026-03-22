@@ -27,7 +27,7 @@ The enclave doesn't trust the seller's success criteria. Instead, it generates i
 └─────────────────────────────────────────────────────────┘
 ```
 
-The canary is a 32-character random hex string (128 bits of entropy). It's different every run. You can't fake it — your exploit must actually execute code to read the file.
+The canary is a 64-character random hex string (256 bits of entropy). It's different every run. You can't fake it — your exploit must actually execute code to read the file.
 
 ## Oracle Types
 
@@ -35,7 +35,7 @@ The canary is a 32-character random hex string (128 bits of entropy). It's diffe
 |---|---|---|
 | **ACE** | Code execution as service user | Canary at `/var/lib/ndai-oracle/ace_canary` (0644). PoC must `cat` or read this file. |
 | **LPE** | Privilege escalation to root | Canary at `/var/lib/ndai-oracle/lpe_canary` (0600, root-only). Service user can't read it — must escalate first. |
-| **Info Leak** | Memory read from target process | Canary loaded into target's env (`$NDAI_INFO_CANARY`). File is root-only — must read from process memory. |
+| **Info Leak** | Memory read from target process | Canary written to `/var/lib/ndai-oracle/info_canary` (0600, root-only) and loaded into target's env (`$NDAI_INFO_CANARY`). Must read from process memory, not disk. |
 | **Callback** | Blind RCE (outbound connection) | TCP listener on random port. `/var/lib/ndai-oracle/callback_token` contains `host:port:token`. PoC must make the target connect back with the token. |
 | **Crash** | Process termination | PoC causes target process to die with a signal (SIGSEGV, etc.) |
 | **DoS** | Service disruption | Target stops responding to health checks after PoC runs |
