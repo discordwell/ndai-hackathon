@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text
 from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -25,8 +25,10 @@ class VerificationProposal(Base):
     )
     target_version: Mapped[str] = mapped_column(String(100), nullable=False)  # snapshot at time of proposal
 
-    # PoC details
-    poc_script: Mapped[str] = mapped_column(Text, nullable=False)
+    # PoC details — exactly one of poc_script (plaintext, legacy) or sealed_poc (ECIES ciphertext) must be set
+    poc_script: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sealed_poc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    sealed_poc_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)  # SHA-256 of sealed_poc
     poc_script_type: Mapped[str] = mapped_column(String(20), nullable=False)  # "bash" | "python3" | "html" | "powershell"
     claimed_capability: Mapped[str] = mapped_column(String(20), nullable=False)  # "ace" | "lpe" | "info_leak" | "callback" | "crash" | "dos"
     reliability_runs: Mapped[int] = mapped_column(Integer, default=3)

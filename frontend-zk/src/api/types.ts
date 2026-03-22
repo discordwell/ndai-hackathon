@@ -40,8 +40,9 @@ export interface KnownTargetDetail extends KnownTarget {
 // Proposals
 export interface ProposalCreate {
   target_id: string;
-  poc_script: string;
-  script_type: "bash" | "python3" | "html" | "powershell";
+  poc_script?: string;       // plaintext (legacy)
+  sealed_poc?: string;       // base64 ECIES ciphertext (encrypted to enclave)
+  poc_script_type: "bash" | "python3" | "html" | "powershell";
   claimed_capability: string;
   reliability_runs: number;
   asking_price_eth: number;

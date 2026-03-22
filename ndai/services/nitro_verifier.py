@@ -68,10 +68,11 @@ class NitroVerifier:
         # Build steps
         build_steps = target.build_steps_json or []
 
-        # PoC from seller
+        # PoC from seller (plaintext or placeholder for sealed/encrypted submissions)
+        poc_content = proposal.poc_script or "__SEALED__"
         poc = PoCSpec(
             script_type=proposal.poc_script_type,
-            script_content=proposal.poc_script,
+            script_content=poc_content,
             timeout_sec=60,
             run_as_user="poc",
         )

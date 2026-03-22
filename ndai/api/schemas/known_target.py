@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 PLATFORM_TYPES = Literal["linux", "windows", "ios"]
 VERIFICATION_METHODS = Literal["nitro", "ec2_windows", "corellium", "manual"]
@@ -63,11 +63,20 @@ class TargetBuildResponse(BaseModel):
 
 class ProposalCreateRequest(BaseModel):
     target_id: str  # UUID
-    poc_script: str = Field(max_length=262144)  # 256KB
+    poc_script: str | None = Field(default=None, max_length=262144)  # plaintext (legacy)
+    sealed_poc: str | None = Field(default=None, max_length=524288)  # base64 ECIES ciphertext
     poc_script_type: POC_SCRIPT_TYPES
     claimed_capability: CAPABILITY_LEVELS
     reliability_runs: int = Field(default=3, ge=1, le=20)
     asking_price_eth: float = Field(gt=0.0)
+
+    @model_validator(mode="after")
+    def require_exactly_one_poc(self):
+        if not self.poc_script and not self.sealed_poc:
+            raise ValueError("Either poc_script or sealed_poc must be provided")
+        if self.poc_script and self.sealed_poc:
+            raise ValueError("Provide poc_script OR sealed_poc, not both")
+        return self
 
 
 class ProposalResponse(BaseModel):

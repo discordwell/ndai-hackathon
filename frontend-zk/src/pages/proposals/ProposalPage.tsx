@@ -56,9 +56,27 @@ export function ProposalPage({ targetId }: Props) {
     setSubmitting(true);
     setError("");
     try {
+      // 1. Fetch enclave attestation
+      const { fetchAttestation } = await import("../../api/enclave");
+      const { eciesEncrypt } = await import("../../crypto/ecies");
+
+      const nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+        .map((b) => b.toString(16).padStart(2, "0")).join("");
+
+      const attestation = await fetchAttestation(nonce);
+      if (attestation.error) throw new Error(attestation.error);
+      if (!attestation.enclave_public_key) throw new Error("No enclave public key in attestation");
+
+      // 2. Encrypt PoC to enclave's attested public key
+      const pubKeyDER = Uint8Array.from(atob(attestation.enclave_public_key), (c) => c.charCodeAt(0));
+      const pocBytes = new TextEncoder().encode(pocScript);
+      const sealedPocBytes = await eciesEncrypt(pubKeyDER, pocBytes);
+      const sealedPocB64 = btoa(String.fromCharCode(...sealedPocBytes));
+
+      // 3. Submit with sealed_poc (encrypted), not poc_script (plaintext)
       const proposal = await createProposal({
         target_id: targetId,
-        poc_script: pocScript,
+        sealed_poc: sealedPocB64,
         poc_script_type: scriptType,
         claimed_capability: capability,
         reliability_runs: reliabilityRuns,
@@ -220,7 +238,7 @@ export function ProposalPage({ targetId }: Props) {
             disabled={submitting || !pocScript.trim()}
             className="w-full py-3 bg-zk-text text-white font-mono font-bold text-sm uppercase tracking-wider hover:bg-zk-accent disabled:opacity-50 transition-colors"
           >
-            {submitting ? "SUBMITTING..." : "CONTINUE TO DEPOSIT"}
+            {submitting ? "ENCRYPTING TO ENCLAVE..." : "SEAL & SUBMIT POC"}
           </button>
         </div>
       )}

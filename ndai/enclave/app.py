@@ -71,6 +71,7 @@ class EnclaveState:
         self.nsm_stub = None  # Cached NSMStub instance for dev mode
         self.poker_tables: dict = {}  # table_id -> TableState (sealed game state)
         self.pending_overlay = None  # BuyerOverlay, set via deliver_overlay
+        self.pending_poc: str | None = None  # Decrypted PoC script, set via deliver_sealed_poc
 
     def initialize(self):
         """Generate ephemeral keypair and detect NSM availability."""
@@ -336,6 +337,8 @@ def _handle_request(request: dict[str, Any]) -> dict[str, Any]:
         return _handle_vuln_verify(request)
     elif action == "deliver_overlay":
         return _handle_deliver_overlay(request)
+    elif action == "deliver_sealed_poc":
+        return _handle_deliver_sealed_poc(request)
     elif action and action.startswith("poker_"):
         from ndai.enclave.poker.actions import handle_poker_action
         return handle_poker_action(request, _state.poker_tables)
@@ -466,6 +469,12 @@ def _handle_vuln_verify(request: dict[str, Any]) -> dict[str, Any]:
             service_user=spec_data.get("service_user", "www-data"),
         )
 
+        # Override PoC content with decrypted sealed PoC if available
+        if _state.pending_poc:
+            spec.poc.script_content = _state.pending_poc
+            _state.pending_poc = None  # Clear after use
+            logger.info("Using decrypted sealed PoC (%d bytes)", len(spec.poc.script_content))
+
         # Validate inside the enclave (defense in depth — parent already validated)
         errors = validate_target_spec(spec)
         if errors:
@@ -543,6 +552,32 @@ def _handle_deliver_overlay(request: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         logger.error("Overlay delivery failed: %s", exc)
         return {"status": "error", "error": "Overlay delivery failed. Check enclave logs."}
+
+
+def _handle_deliver_sealed_poc(request: dict[str, Any]) -> dict[str, Any]:
+    """Receive an ECIES-encrypted PoC, decrypt inside the enclave, store for next vuln_verify."""
+    try:
+        import base64
+        from ndai.enclave.ephemeral_keys import ecies_decrypt
+
+        sealed_data = request.get("sealed_poc")
+        if not sealed_data:
+            return {"status": "error", "error": "No sealed_poc in request"}
+
+        if isinstance(sealed_data, str):
+            encrypted_bytes = base64.b64decode(sealed_data)
+        else:
+            encrypted_bytes = bytes(sealed_data)
+
+        poc_plaintext = ecies_decrypt(_state.keypair.private_key, encrypted_bytes)
+        _state.pending_poc = poc_plaintext.decode("utf-8")
+
+        logger.info("Sealed PoC delivered and decrypted (%d bytes plaintext)", len(poc_plaintext))
+        return {"status": "ok", "poc_size": len(poc_plaintext)}
+
+    except Exception as exc:
+        logger.error("Sealed PoC delivery failed: %s", exc)
+        return {"status": "error", "error": "Sealed PoC decryption failed. Wrong enclave key?"}
 
 
 def _handle_attestation(request: dict[str, Any]) -> dict[str, Any]:

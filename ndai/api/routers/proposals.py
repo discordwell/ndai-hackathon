@@ -84,12 +84,25 @@ async def create_proposal(
     deposit_proposal_id = _compute_proposal_id(proposal_id)
     deposit_amount_wei = _usd_to_wei(target.escrow_amount_usd) if not has_badge else None
 
+    # Handle sealed (encrypted) vs plaintext PoC
+    import base64 as _b64
+    import hashlib as _hl
+    sealed_poc_bytes = None
+    sealed_poc_hash = None
+    if request.sealed_poc:
+        sealed_poc_bytes = _b64.b64decode(request.sealed_poc)
+        if len(sealed_poc_bytes) < 148:  # ECIES minimum: 120 (DER) + 12 (nonce) + 16 (tag)
+            raise HTTPException(status_code=400, detail="sealed_poc too small to be valid ECIES ciphertext")
+        sealed_poc_hash = _hl.sha256(sealed_poc_bytes).hexdigest()
+
     proposal = VerificationProposal(
         id=proposal_id,
         seller_pubkey=pubkey,
         target_id=target.id,
         target_version=target.current_version,
         poc_script=request.poc_script,
+        sealed_poc=sealed_poc_bytes,
+        sealed_poc_hash=sealed_poc_hash,
         poc_script_type=request.poc_script_type,
         claimed_capability=request.claimed_capability,
         reliability_runs=request.reliability_runs,
@@ -513,6 +526,16 @@ async def _run_simulated_verification(proposal_id, proposal, target, claimed_cap
     from ndai.services.nitro_verifier import NitroVerifier
     verifier = NitroVerifier()
     target_spec = verifier.build_target_spec(target, proposal)
+
+    # If sealed_poc, decrypt using the simulated enclave keypair
+    if proposal.sealed_poc and not proposal.poc_script:
+        from ndai.api.routers.enclave import _get_sim_state
+        from ndai.enclave.ephemeral_keys import ecies_decrypt
+        sim_keypair, _ = _get_sim_state()
+        poc_plaintext = ecies_decrypt(sim_keypair.private_key, proposal.sealed_poc)
+        # Override the placeholder PoC content in the target spec
+        target_spec.poc.script_content = poc_plaintext.decode("utf-8")
+        logger.info("Decrypted sealed PoC (%d bytes) for proposal %s", len(poc_plaintext), proposal_id)
 
     await _emit_progress(proposal_id, "build_done", {"message": "Target specification ready."})
 
