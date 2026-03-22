@@ -1,21 +1,14 @@
 /**
  * Zero-knowledge identity: password-derived Ed25519 keypairs.
  *
- * The passphrase never leaves the client. scrypt derives a 32-byte seed,
- * which becomes the Ed25519 private key. The server only ever sees the
- * public key.
+ * The passphrase never leaves the client. PBKDF2-SHA512 derives a
+ * 32-byte seed, which becomes the Ed25519 private key. The server
+ * only ever sees the public key.
  */
-import { scrypt } from "@noble/hashes/scrypt";
-import { utf8ToBytes } from "@noble/hashes/utils";
 import * as ed from "@noble/ed25519";
 
 const SALT = "NDAI_ZK_V1";
-
-// scrypt params — N=2^15 (32 MB), r=8, p=1 — memory-hard KDF
-// Balances security with browser performance (~1-2s)
-const SCRYPT_N = 32768;
-const SCRYPT_R = 8;
-const SCRYPT_P = 1;
+const PBKDF2_ITERATIONS = 600000; // OWASP recommended for SHA-512
 const KEY_LEN = 32;
 
 export interface ZKIdentity {
@@ -32,22 +25,20 @@ function bytesToHex(bytes: Uint8Array): string {
 
 /**
  * Derive an Ed25519 identity from a passphrase.
- * Uses scrypt (memory-hard KDF, pure JS — no WASM needed).
- * Takes ~1-3 seconds depending on hardware.
+ * Uses Web Crypto PBKDF2-SHA512 — native, async, non-blocking.
  */
 export async function deriveIdentity(passphrase: string): Promise<ZKIdentity> {
-  const salt = utf8ToBytes(SALT);
-  const pass = utf8ToBytes(passphrase);
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw", enc.encode(passphrase), "PBKDF2", false, ["deriveBits"],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: enc.encode(SALT), iterations: PBKDF2_ITERATIONS, hash: "SHA-512" },
+    keyMaterial,
+    KEY_LEN * 8,
+  );
 
-  // scrypt is synchronous but CPU-intensive — wrap in a microtask
-  // so the UI can show "DERIVING KEY..." before blocking
-  const seed = await new Promise<Uint8Array>((resolve) => {
-    setTimeout(() => {
-      resolve(scrypt(pass, salt, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, dkLen: KEY_LEN }));
-    }, 0);
-  });
-
-  const privateKey = new Uint8Array(seed);
+  const privateKey = new Uint8Array(bits);
   const publicKey = await ed.getPublicKeyAsync(privateKey);
 
   return {
