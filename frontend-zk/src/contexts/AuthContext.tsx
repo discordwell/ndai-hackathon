@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useCallback } from "react";
 import { deriveIdentity, signRegistration, signChallenge } from "../crypto/identity";
 import type { ZKIdentity } from "../crypto/identity";
 import * as zkApi from "../api/zkAuth";
+import { generatePrekeyBundle } from "../crypto/keys";
+import { uploadPrekeys, getPrekeyStatus } from "../api/messaging";
 
 const TOKEN_KEY = "zdayzk_token";
 const PUBKEY_KEY = "zdayzk_pubkey";
@@ -18,6 +20,7 @@ interface AuthContextValue extends AuthState {
   register: (passphrase: string) => Promise<string>;
   logout: () => void;
   privateKey: Uint8Array | null;
+  publicKey: Uint8Array | null;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -37,6 +40,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isDerivingKey: false,
     };
   });
+
+  // Upload prekey bundle if needed (after auth, non-blocking)
+  const ensurePrekeys = useCallback(async (id: ZKIdentity) => {
+    try {
+      const status = await getPrekeyStatus();
+      if (status.remaining_otpks < 5 || status.signed_prekey_age_hours > 168) {
+        // Need to replenish — determine next OTPK index
+        const spkIndex = status.signed_prekey_age_hours > 168 ? 1 : 0;
+        const otpkStart = 20 - status.remaining_otpks + 20; // approximate next batch
+        const bundle = await generatePrekeyBundle(id.privateKey, id.publicKey, spkIndex, otpkStart, 20);
+        await uploadPrekeys({
+          identity_x25519_pub: bundle.identityX25519Pub,
+          signed_prekey_pub: bundle.signedPrekeyPub,
+          signed_prekey_sig: bundle.signedPrekeySig,
+          signed_prekey_id: bundle.signedPrekeyId,
+          one_time_prekeys: bundle.oneTimePrekeys,
+        });
+      }
+    } catch {
+      // Prekey upload failure is non-fatal — will retry on next connect
+    }
+  }, []);
+
+  // Upload initial prekey bundle (on first registration)
+  const uploadInitialPrekeys = useCallback(async (id: ZKIdentity) => {
+    try {
+      const bundle = await generatePrekeyBundle(id.privateKey, id.publicKey, 0, 0, 20);
+      await uploadPrekeys({
+        identity_x25519_pub: bundle.identityX25519Pub,
+        signed_prekey_pub: bundle.signedPrekeyPub,
+        signed_prekey_sig: bundle.signedPrekeySig,
+        signed_prekey_id: bundle.signedPrekeyId,
+        one_time_prekeys: bundle.oneTimePrekeys,
+      });
+    } catch {
+      // Non-fatal
+    }
+  }, []);
 
   const login = useCallback(async (passphrase: string) => {
     setAuth((prev) => ({ ...prev, isDerivingKey: true }));
@@ -68,11 +109,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         publicKeyHex: id.publicKeyHex,
         isDerivingKey: false,
       });
+
+      // 7. Ensure prekey bundle is uploaded (non-blocking)
+      ensurePrekeys(id);
     } catch (e) {
       setAuth((prev) => ({ ...prev, isDerivingKey: false }));
       throw e;
     }
-  }, []);
+  }, [ensurePrekeys]);
 
   const register = useCallback(async (passphrase: string): Promise<string> => {
     setAuth((prev) => ({ ...prev, isDerivingKey: true }));
@@ -103,12 +147,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isDerivingKey: false,
       });
 
+      // 6. Upload initial prekey bundle (non-blocking)
+      uploadInitialPrekeys(id);
+
       return id.publicKeyHex;
     } catch (e) {
       setAuth((prev) => ({ ...prev, isDerivingKey: false }));
       throw e;
     }
-  }, []);
+  }, [uploadInitialPrekeys]);
 
   const logout = useCallback(() => {
     sessionStorage.removeItem(TOKEN_KEY);
@@ -131,6 +178,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         register,
         logout,
         privateKey: identity?.privateKey ?? null,
+        publicKey: identity?.publicKey ?? null,
       }}
     >
       {children}
