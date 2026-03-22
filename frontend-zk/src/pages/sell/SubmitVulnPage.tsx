@@ -12,7 +12,11 @@ export function SubmitVulnPage() {
     cvss_self_assessed: 7.0,
     discovery_date: new Date().toISOString().split("T")[0],
     asking_price_eth: 0.1,
+    software_category: "default",
     exclusivity: "exclusive",
+    embargo_days: 90,
+    max_disclosure_level: 3,
+    outside_option_value: 0.3,
     patch_status: "unpatched",
   });
   const [error, setError] = useState("");
@@ -27,7 +31,9 @@ export function SubmitVulnPage() {
     setError("");
     setLoading(true);
     try {
-      await createVuln(form);
+      // Only send fields the ZK backend schema accepts
+      const { software_category, embargo_days, max_disclosure_level, outside_option_value, ...zkFields } = form;
+      await createVuln(zkFields);
       window.location.hash = "#/sell";
     } catch (err: any) {
       setError(err.detail || "Submission failed");
@@ -94,7 +100,14 @@ export function SubmitVulnPage() {
             placeholder="Describe the vulnerability without revealing the exploit..." />
         </div>
 
-        <div className="zk-section-title">ASSESSMENT</div>
+        {/* — ALGORITHMIC: these fields feed the pricing engine and TEE negotiation — */}
+        <div className="zk-section-title flex items-center gap-3">
+          ASSESSMENT
+          <span className="font-mono text-label px-2 py-0.5 border-2 border-zk-accent text-zk-accent">ALGORITHMIC</span>
+        </div>
+        <p className="text-xs text-zk-muted font-mono -mt-4 mb-4">
+          These values feed the Nash bargaining engine and shelf-life decay pricing inside the TEE.
+        </p>
         <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="zk-label">CVSS *</label>
@@ -114,11 +127,9 @@ export function SubmitVulnPage() {
               onChange={(e) => set("asking_price_eth", parseFloat(e.target.value))} />
           </div>
         </div>
-
-        <div className="zk-section-title">TERMS</div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div>
-            <label className="zk-label">EXCLUSIVITY</label>
+            <label className="zk-label">EXCLUSIVITY *</label>
             <select className="zk-select" value={form.exclusivity}
               onChange={(e) => set("exclusivity", e.target.value)}>
               <option value="exclusive">Exclusive</option>
@@ -126,13 +137,58 @@ export function SubmitVulnPage() {
             </select>
           </div>
           <div>
-            <label className="zk-label">PATCH STATUS</label>
+            <label className="zk-label">PATCH STATUS *</label>
             <select className="zk-select" value={form.patch_status}
               onChange={(e) => set("patch_status", e.target.value)}>
               <option value="unpatched">Unpatched</option>
               <option value="patched">Patched</option>
               <option value="unknown">Unknown</option>
             </select>
+          </div>
+          <div>
+            <label className="zk-label">CATEGORY</label>
+            <select className="zk-select" value={form.software_category}
+              onChange={(e) => set("software_category", e.target.value)}>
+              <option value="default">Default</option>
+              <option value="browser">Browser</option>
+              <option value="os_kernel">OS / Kernel</option>
+              <option value="mobile">Mobile</option>
+              <option value="embedded">Embedded</option>
+              <option value="cloud">Cloud / SaaS</option>
+            </select>
+          </div>
+        </div>
+
+        {/* — DECLARATIVE: seller-stated terms, not verified by TEE — */}
+        <div className="zk-section-title flex items-center gap-3">
+          TERMS
+          <span className="font-mono text-label px-2 py-0.5 border-2 border-zk-muted text-zk-muted">DECLARATIVE</span>
+        </div>
+        <p className="text-xs text-zk-muted font-mono -mt-4 mb-4">
+          Seller-stated terms visible to buyers. Not verified algorithmically.
+        </p>
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <label className="zk-label">EMBARGO (DAYS)</label>
+            <input className="zk-input" type="number" min={0} max={365}
+              value={form.embargo_days}
+              onChange={(e) => set("embargo_days", parseInt(e.target.value))} />
+          </div>
+          <div>
+            <label className="zk-label">MAX DISCLOSURE</label>
+            <select className="zk-select" value={form.max_disclosure_level}
+              onChange={(e) => set("max_disclosure_level", parseInt(e.target.value))}>
+              <option value={0}>Level 0 — Class only</option>
+              <option value={1}>Level 1 — + Component</option>
+              <option value={2}>Level 2 — + Attack surface</option>
+              <option value={3}>Level 3 — Full PoC summary</option>
+            </select>
+          </div>
+          <div>
+            <label className="zk-label">OUTSIDE OPTION</label>
+            <input className="zk-input" type="number" min={0} max={1} step={0.05}
+              value={form.outside_option_value}
+              onChange={(e) => set("outside_option_value", parseFloat(e.target.value))} />
           </div>
         </div>
 
