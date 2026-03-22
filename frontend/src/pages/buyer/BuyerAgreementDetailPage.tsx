@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from "react";
-import { getAgreement, setAgreementParams, confirmAgreement } from "../../api/agreements";
+import { getAgreement, setAgreementParams, confirmAgreement, getEscrowState } from "../../api/agreements";
 import { startNegotiation, getNegotiationStatus } from "../../api/negotiations";
 import { Card } from "../../components/shared/Card";
 import { LoadingSpinner } from "../../components/shared/LoadingSpinner";
 import { StatusBadge } from "../../components/shared/StatusBadge";
 import { OutcomeDisplay } from "../../components/negotiation/OutcomeDisplay";
 import { NegotiationProgress } from "../../components/negotiation/NegotiationProgress";
+import { MechanismExplorer } from "../../components/negotiation/MechanismExplorer";
+import { EscrowStepper } from "../../components/shared/EscrowStepper";
+import { VerificationPanel } from "../../components/shared/VerificationPanel";
 import { useNegotiationStream } from "../../hooks/useNegotiationStream";
 import { useAuth } from "../../contexts/AuthContext";
-import type { AgreementResponse, NegotiationStatusResponse } from "../../api/types";
+import type { AgreementResponse, NegotiationStatusResponse, EscrowStateResponse } from "../../api/types";
 
 export function BuyerAgreementDetailPage({ id }: { id: string }) {
   const { token } = useAuth();
@@ -18,6 +21,7 @@ export function BuyerAgreementDetailPage({ id }: { id: string }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState("");
   const [alpha0, setAlpha0] = useState("0.3");
+  const [escrowData, setEscrowData] = useState<any>(null);
 
   const { phase, isComplete, connect: connectSSE } = useNegotiationStream(id, token || "");
 
@@ -31,6 +35,14 @@ export function BuyerAgreementDetailPage({ id }: { id: string }) {
           setNegStatus(s);
         } catch {
           // no negotiation yet
+        }
+      }
+      if (a.escrow_address) {
+        try {
+          const es = await getEscrowState(id);
+          setEscrowData(es);
+        } catch {
+          // blockchain unavailable
         }
       }
     } catch {
@@ -144,6 +156,15 @@ export function BuyerAgreementDetailPage({ id }: { id: string }) {
       {error && (
         <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm mb-4">
           {error}
+        </div>
+      )}
+
+      {agreement.escrow_address && escrowData && (
+        <div className="mb-4">
+          <EscrowStepper
+            state={escrowData.state || "Funded"}
+            creationTxHash={agreement.escrow_tx_hash || undefined}
+          />
         </div>
       )}
 
@@ -266,6 +287,19 @@ export function BuyerAgreementDetailPage({ id }: { id: string }) {
             {negStatus.error || "An error occurred during negotiation"}
           </div>
         </Card>
+      )}
+
+      <div className="mb-6">
+        <MechanismExplorer
+          initialBudgetCap={agreement.budget_cap ?? 0.8}
+          initialAlpha0={agreement.alpha_0 ?? 0.3}
+          initialOmegaHat={negStatus?.outcome?.omega_hat ?? 0.5}
+          initialBuyerValue={negStatus?.outcome?.buyer_valuation ?? 0.5}
+        />
+      </div>
+
+      {isCompleted && (
+        <VerificationPanel verification={null} escrowData={escrowData} />
       )}
     </div>
   );

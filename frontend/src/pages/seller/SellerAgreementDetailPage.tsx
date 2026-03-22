@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from "react";
-import { getAgreement } from "../../api/agreements";
+import { getAgreement, getEscrowState } from "../../api/agreements";
 import { getNegotiationOutcome } from "../../api/negotiations";
 import { Card } from "../../components/shared/Card";
 import { LoadingSpinner } from "../../components/shared/LoadingSpinner";
 import { StatusBadge } from "../../components/shared/StatusBadge";
 import { OutcomeDisplay } from "../../components/negotiation/OutcomeDisplay";
-import type { AgreementResponse, NegotiationOutcomeResponse } from "../../api/types";
+import { MechanismExplorer } from "../../components/negotiation/MechanismExplorer";
+import { EscrowStepper } from "../../components/shared/EscrowStepper";
+import { VerificationPanel } from "../../components/shared/VerificationPanel";
+import type { AgreementResponse, NegotiationOutcomeResponse, EscrowStateResponse } from "../../api/types";
 
 export function SellerAgreementDetailPage({ id }: { id: string }) {
   const [agreement, setAgreement] = useState<AgreementResponse | null>(null);
   const [outcome, setOutcome] = useState<NegotiationOutcomeResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [escrowData, setEscrowData] = useState<any>(null);
 
   useEffect(() => {
     async function load() {
@@ -20,6 +24,14 @@ export function SellerAgreementDetailPage({ id }: { id: string }) {
         if (a.status.startsWith("completed_")) {
           const o = await getNegotiationOutcome(id);
           setOutcome(o);
+        }
+        if (a.escrow_address) {
+          try {
+            const es = await getEscrowState(id);
+            setEscrowData(es);
+          } catch {
+            // blockchain unavailable
+          }
         }
       } catch {
         // handled by null state
@@ -33,6 +45,8 @@ export function SellerAgreementDetailPage({ id }: { id: string }) {
   if (loading) return <LoadingSpinner />;
   if (!agreement) return <div className="text-red-600">Agreement not found</div>;
 
+  const isCompleted = agreement.status.startsWith("completed_");
+
   return (
     <div className="max-w-2xl">
       <a
@@ -42,6 +56,15 @@ export function SellerAgreementDetailPage({ id }: { id: string }) {
         &larr; Back to agreements
       </a>
       <h1 className="text-2xl font-bold mb-6">Agreement Detail</h1>
+
+      {agreement.escrow_address && escrowData && (
+        <div className="mb-4">
+          <EscrowStepper
+            state={escrowData.state || "Funded"}
+            creationTxHash={agreement.escrow_tx_hash || undefined}
+          />
+        </div>
+      )}
 
       <Card className="mb-6">
         <div className="grid grid-cols-2 gap-4 text-sm">
@@ -77,6 +100,19 @@ export function SellerAgreementDetailPage({ id }: { id: string }) {
       </Card>
 
       {outcome && <OutcomeDisplay outcome={outcome} />}
+
+      <div className="mb-6">
+        <MechanismExplorer
+          initialBudgetCap={agreement.budget_cap ?? 0.8}
+          initialAlpha0={agreement.alpha_0 ?? 0.3}
+          initialOmegaHat={outcome?.omega_hat ?? 0.5}
+          initialBuyerValue={outcome?.buyer_valuation ?? 0.5}
+        />
+      </div>
+
+      {isCompleted && (
+        <VerificationPanel verification={null} escrowData={escrowData} />
+      )}
     </div>
   );
 }
