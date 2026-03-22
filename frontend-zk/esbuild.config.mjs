@@ -22,11 +22,12 @@ function copyHTML() {
   );
 }
 
-// Stub Node.js built-ins for browser (argon2-browser's Emscripten references fs/path)
+// Stub Node.js built-ins for browser (some deps reference fs/path)
+// NOTE: do NOT stub 'crypto' — @noble/ed25519 needs globalThis.crypto.subtle
 const nodeStubPlugin = {
   name: "node-builtins-stub",
   setup(build) {
-    build.onResolve({ filter: /^(fs|path|crypto)$/ }, (args) => ({
+    build.onResolve({ filter: /^(fs|path)$/ }, (args) => ({
       path: args.path,
       namespace: "node-stub",
     }));
