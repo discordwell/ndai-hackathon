@@ -74,29 +74,58 @@ def _get_simulated_attestation(nonce_bytes: bytes) -> dict:
 
 
 async def _get_nitro_attestation(nonce_bytes: bytes) -> dict:
-    """Get attestation from a running Nitro enclave."""
-    from ndai.tee.nitro_provider import NitroEnclaveProvider
+    """Get attestation from the running Nitro enclave via vsock."""
+    import asyncio
+    import json
+    import socket
+    import struct
+
+    from ndai.config import settings
     from ndai.tee.attestation import verify_attestation
 
-    provider = NitroEnclaveProvider()
+    # vsock constants
+    AF_VSOCK = 40
+    ENCLAVE_CID = settings.enclave_cid if hasattr(settings, "enclave_cid") else 16
+    VSOCK_PORT = settings.enclave_vsock_port
 
-    # Find running enclave or indicate none is available
-    enclaves = await provider.list_enclaves()
-    if not enclaves:
+    loop = asyncio.get_event_loop()
+
+    try:
+        # Connect to enclave via vsock
+        sock = socket.socket(AF_VSOCK, socket.SOCK_STREAM)
+        sock.settimeout(10)
+        await loop.run_in_executor(None, sock.connect, (ENCLAVE_CID, VSOCK_PORT))
+
+        # Send attestation request (length-prefixed JSON)
+        request = json.dumps({
+            "action": "get_attestation",
+            "nonce": nonce_bytes.hex() if nonce_bytes else "",
+        }).encode()
+        header = struct.pack(">I", len(request))
+        await loop.run_in_executor(None, sock.sendall, header + request)
+
+        # Read response (length-prefixed JSON)
+        resp_header = await loop.run_in_executor(None, sock.recv, 4)
+        if len(resp_header) < 4:
+            return {"error": "Enclave connection closed", "mode": "nitro"}
+        resp_len = struct.unpack(">I", resp_header)[0]
+
+        resp_data = b""
+        while len(resp_data) < resp_len:
+            chunk = await loop.run_in_executor(None, sock.recv, min(resp_len - len(resp_data), 65536))
+            if not chunk:
+                break
+            resp_data += chunk
+
+        sock.close()
+        response = json.loads(resp_data)
+
+    except (ConnectionRefusedError, OSError) as e:
         return {
-            "error": "No enclave running. Start a verification to launch one.",
+            "error": f"Cannot reach enclave (CID {ENCLAVE_CID}): {e}",
             "format": "none",
             "mode": "nitro",
         }
-
-    enclave_id = enclaves[0]["enclave_id"]
-
-    # Request attestation from the enclave
-    await provider.send_message(enclave_id, {
-        "action": "get_attestation",
-        "nonce": nonce_bytes.hex() if nonce_bytes else "",
-    })
-    response = await provider.receive_message(enclave_id)
 
     if response.get("status") != "ok":
         return {"error": response.get("error", "Attestation failed"), "mode": "nitro"}
@@ -104,7 +133,7 @@ async def _get_nitro_attestation(nonce_bytes: bytes) -> dict:
     attestation_doc_b64 = response["attestation_doc"]
     attestation_doc = base64.b64decode(attestation_doc_b64)
 
-    # Verify and extract public key
+    # Verify attestation and extract public key
     result = verify_attestation(attestation_doc, nonce=nonce_bytes or None)
 
     return {
