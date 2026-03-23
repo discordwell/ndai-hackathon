@@ -17,7 +17,7 @@ FROM amazonlinux:2023
 WORKDIR /app
 
 # Install Python 3.11, Apache httpd, and utilities
-RUN dnf install -y python3.11 httpd curl procps-ng shadow-utils && dnf clean all \
+RUN dnf install -y --allowerasing python3.11 httpd curl procps-ng shadow-utils && dnf clean all \
     && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
     && ln -sf /usr/bin/python3.11 /usr/bin/python
 
