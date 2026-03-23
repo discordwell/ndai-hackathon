@@ -224,13 +224,16 @@ class VulnVerifyOrchestrator:
                 )
 
             r = result_resp["result"]
+            # The enclave returns unpatched_capability/patched_capability dicts
+            unpatched = r.get("unpatched_capability", {})
+            patched = r.get("patched_capability")
             return VerificationOutcome(
-                unpatched_matches=r["unpatched_matches"],
-                patched_matches=r.get("patched_matches"),
+                unpatched_matches=unpatched.get("verified_level") is not None,
+                patched_matches=patched.get("verified_level") is not None if patched else None,
                 overlap_detected=r.get("overlap_detected"),
-                verification_chain_hash=r["verification_chain_hash"],
-                pcr0=identity.pcr0,
-                timestamp=r["timestamp"],
+                verification_chain_hash=r.get("verification_chain_hash", ""),
+                pcr0=identity.pcr0 or "nitro",
+                timestamp=r.get("timestamp", ""),
             )
 
         except TEEError:

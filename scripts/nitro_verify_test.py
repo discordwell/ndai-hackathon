@@ -46,12 +46,12 @@ def main():
     token = vr["access_token"]
     print("Authenticated")
 
-    # Grant badge
-    subprocess.run([
-        "docker", "exec", "ndai-hackathon-postgres-1",
-        "psql", "-U", "ndai", "-d", "ndai", "-c",
-        f"UPDATE vuln_identities SET has_badge = true WHERE public_key = '{pk}';",
-    ], check=True, capture_output=True)
+    # Grant badge (use sg docker if not in docker group)
+    cmd = f"docker exec ndai-hackathon-postgres-1 psql -U ndai -d ndai -c \"UPDATE vuln_identities SET has_badge = true WHERE public_key = '{pk}';\""
+    result = subprocess.run(cmd, shell=True, capture_output=True)
+    if result.returncode != 0:
+        # Try with sg docker
+        subprocess.run(f'sg docker -c \'{cmd}\'', shell=True, check=True, capture_output=True)
     print("Badge granted")
 
     # Get Apache target
