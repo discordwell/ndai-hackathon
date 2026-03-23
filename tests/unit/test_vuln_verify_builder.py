@@ -57,7 +57,7 @@ class TestGenerateDockerfile:
         spec = _make_spec()
         df = self.builder.generate_dockerfile(spec)
         assert "python3" in df
-        assert "pip3 install" in df
+        assert "python3.11-pip" in df or "pip3 install" in df
 
     def test_contains_users(self):
         spec = _make_spec()

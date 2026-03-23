@@ -1,8 +1,15 @@
 """Unit tests for EscrowClient — no Anvil required."""
 
+from unittest.mock import patch
+
 import pytest
 
-from ndai.blockchain.escrow_client import EscrowClient
+# Mock _load_abi before importing EscrowClient so the constructor
+# doesn't try to open Forge artifacts (not available in CI).
+_FAKE_ABI: list[dict] = [{"type": "function", "name": "stub", "inputs": [], "outputs": []}]
+
+with patch("ndai.blockchain.escrow_client._load_abi", return_value=_FAKE_ABI):
+    from ndai.blockchain.escrow_client import EscrowClient
 
 VALID_FACTORY = "0x1234567890123456789012345678901234567890"
 VALID_RPC = "http://localhost:8545"
