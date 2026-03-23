@@ -7,12 +7,12 @@
 # Oracle: /var/lib/ndai-oracle/ (canary files planted at runtime)
 # PoC runs as: unprivileged 'poc' user
 
-# --- Stage 1: Build NDAI Python dependencies with matching Python ---
-FROM python:3.10-slim AS builder
+# --- Stage 1: Build NDAI Python dependencies ---
+FROM python:3.11-slim AS builder
 WORKDIR /build
 COPY pyproject.toml ./
 COPY ndai/ ./ndai/
-RUN pip install --no-cache-dir --prefix=/install .
+RUN pip install --no-cache-dir --target=/install .
 
 # --- Stage 2: Target environment ---
 FROM ubuntu:22.04
@@ -29,8 +29,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && dpkg -s apache2 | grep Version > /VERSIONS.txt \
     && dpkg -s curl | grep Version >> /VERSIONS.txt
 
-# Copy pre-built Python packages from builder (python3.10 matches Ubuntu 22.04)
-COPY --from=builder /install/lib/python3.10/site-packages /usr/lib/python3/dist-packages/
+# Copy pre-built Python packages from builder (flat target dir, no version path)
+COPY --from=builder /install /usr/lib/python3/dist-packages/
 
 # Copy NDAI enclave source
 COPY ndai/ /app/ndai/
