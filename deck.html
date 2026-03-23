@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NDAI — Non-Disclosure via AI Agents</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg: #0a0a0a;
+  --fg: #e8e8e8;
+  --accent: #ff4400;
+  --dim: #555;
+  --border: #333;
+  --surface: #111;
+  --green: #00cc66;
+  --yellow: #ffaa00;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'JetBrains Mono', monospace;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+.deck {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+}
+
+.slide {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100vw;
+  height: 100vh;
+  padding: 60px 80px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+  overflow: hidden;
+}
+
+.slide.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Slide counter */
+.slide-num {
+  position: fixed;
+  bottom: 30px;
+  right: 40px;
+  font-size: 13px;
+  color: var(--dim);
+  z-index: 100;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Navigation hint */
+.nav-hint {
+  position: fixed;
+  bottom: 30px;
+  left: 40px;
+  font-size: 11px;
+  color: var(--dim);
+  z-index: 100;
+  font-family: 'JetBrains Mono', monospace;
+  opacity: 0.5;
+}
+
+/* Progress bar */
+.progress {
+  position: fixed;
+  top: 0; left: 0;
+  height: 3px;
+  background: var(--accent);
+  z-index: 100;
+  transition: width 0.3s ease;
+}
+
+/* ── Typography ── */
+h1 {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 800;
+  font-size: 52px;
+  line-height: 1.1;
+  letter-spacing: -2px;
+  margin-bottom: 20px;
+}
+
+h2 {
+  font-weight: 700;
+  font-size: 36px;
+  line-height: 1.15;
+  letter-spacing: -1px;
+  margin-bottom: 24px;
+}
+
+h3 {
+  font-weight: 600;
+  font-size: 18px;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  color: var(--accent);
+  margin-bottom: 16px;
+}
+
+p, li {
+  font-size: 16px;
+  line-height: 1.7;
+  color: #ccc;
+  max-width: 800px;
+}
+
+.big-num {
+  font-size: 72px;
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  color: var(--dim);
+}
+
+.accent { color: var(--accent); }
+.green { color: var(--green); }
+.yellow { color: var(--yellow); }
+.dim { color: var(--dim); }
+.bold { font-weight: 700; }
+
+/* ── Code blocks ── */
+.code {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  padding: 20px 24px;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+  color: #aaa;
+  margin: 16px 0;
+}
+
+.code .kw { color: var(--accent); }
+.code .str { color: var(--green); }
+.code .cmt { color: var(--dim); }
+
+/* ── Tables ── */
+table {
+  border-collapse: collapse;
+  font-size: 13px;
+  width: 100%;
+  max-width: 900px;
+}
+
+th {
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--dim);
+  padding: 8px 16px;
+  border-bottom: 2px solid var(--border);
+}
+
+td {
+  padding: 10px 16px;
+  border-bottom: 1px solid #1a1a1a;
+  color: #bbb;
+}
+
+td:first-child { color: var(--fg); font-weight: 500; }
+
+/* ── Grids ── */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; }
+.grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 20px; }
+
+.card {
+  border: 2px solid var(--border);
+  padding: 24px;
+  background: var(--surface);
+}
+
+.card h4 {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.card p {
+  font-size: 13px;
+  color: #888;
+  line-height: 1.5;
+}
+
+/* ── Flow diagram ── */
+.flow {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 30px 0;
+}
+
+.flow-step {
+  border: 2px solid var(--border);
+  padding: 16px 20px;
+  text-align: center;
+  min-width: 140px;
+  background: var(--surface);
+}
+
+.flow-step.active-step {
+  border-color: var(--accent);
+  background: rgba(255, 68, 0, 0.08);
+}
+
+.flow-step .step-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--dim);
+  margin-bottom: 4px;
+}
+
+.flow-step .step-value {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.flow-arrow {
+  color: var(--dim);
+  font-size: 20px;
+  padding: 0 8px;
+}
+
+/* ── Tags ── */
+.tag {
+  display: inline-block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  padding: 4px 12px;
+  border: 2px solid;
+  font-weight: 600;
+}
+
+.tag-accent { border-color: var(--accent); color: var(--accent); }
+.tag-green { border-color: var(--green); color: var(--green); }
+.tag-dim { border-color: var(--dim); color: var(--dim); }
+
+/* ── Special slides ── */
+.slide-title {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.slide-title h1 {
+  font-size: 72px;
+  letter-spacing: -3px;
+}
+
+.slide-title .subtitle {
+  font-size: 18px;
+  color: var(--dim);
+  max-width: 600px;
+  margin-top: 16px;
+}
+
+/* Decorative elements */
+.corner-mark {
+  position: absolute;
+  font-size: 200px;
+  font-weight: 800;
+  color: rgba(255, 68, 0, 0.04);
+  right: -20px;
+  top: -40px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.border-accent {
+  border-left: 4px solid var(--accent);
+  padding-left: 20px;
+}
+
+/* Stat row */
+.stats {
+  display: flex;
+  gap: 60px;
+  margin: 30px 0;
+}
+
+.stat .stat-val {
+  font-size: 42px;
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.stat .stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--dim);
+  margin-top: 8px;
+}
+
+/* Badge for verified */
+.verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--green);
+  border: 2px solid var(--green);
+  padding: 4px 14px;
+}
+
+.verified::before {
+  content: "✓";
+  font-weight: 800;
+}
+
+/* Scanline effect for title */
+.slide-title::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(255,255,255,0.008) 2px,
+    rgba(255,255,255,0.008) 4px
+  );
+  pointer-events: none;
+}
+
+/* Horizontal rule */
+hr {
+  border: none;
+  border-top: 2px solid var(--border);
+  margin: 24px 0;
+}
+
+ul {
+  list-style: none;
+  padding: 0;
+}
+
+ul li {
+  padding: 6px 0;
+  padding-left: 20px;
+  position: relative;
+}
+
+ul li::before {
+  content: "›";
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.mt-auto { margin-top: auto; }
+.mt-2 { margin-top: 16px; }
+.mt-4 { margin-top: 32px; }
+.mb-2 { margin-bottom: 16px; }
+.gap-sm { gap: 16px; }
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+<div class="slide-num" id="slideNum"></div>
+<div class="nav-hint">← → ARROW KEYS</div>
+
+<div class="deck" id="deck">
+
+<!-- ════════════════════════════════════════ SLIDE 1: TITLE ════════════════════════════════════════ -->
+<div class="slide slide-title">
+  <h3>arxiv:2502.07924</h3>
+  <h1>NDAI</h1>
+  <p class="subtitle" style="font-size: 20px; color: #888;">
+    Non-Disclosure via AI Agents<br>
+    <span style="color: var(--accent);">Solving Arrow's Paradox for Zero-Day Vulnerabilities</span>
+  </p>
+  <div style="margin-top: 40px;">
+    <span class="tag tag-accent">AWS NITRO ENCLAVES</span>
+    <span class="tag tag-dim" style="margin-left: 8px;">BASE SEPOLIA</span>
+    <span class="tag tag-dim" style="margin-left: 8px;">SIGNAL PROTOCOL</span>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ SLIDE 2: PROBLEM ════════════════════════════════════════ -->
+<div class="slide">
+  <div class="corner-mark">?</div>
+  <h3>The Problem</h3>
+  <h2>Arrow's Disclosure Paradox</h2>
+  <div class="border-accent">
+    <p>To sell a zero-day, you must <span class="accent bold">prove it works</span>.<br>
+    But proving it works means <span class="accent bold">revealing it</span>.<br>
+    And once revealed, the buyer has no reason to pay.</p>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-val">$2.5M</div>
+      <div class="stat-label">Top iOS 0day price</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val">$0</div>
+      <div class="stat-label">Seller protection</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val">100%</div>
+      <div class="stat-label">Trust-based</div>
+    </div>
+  </div>
+
+  <p class="dim" style="font-size: 13px; margin-top: 20px;">
+    The entire 0day market operates on reputation and trust.
+    One bad actor — one exfiltrated exploit — and the seller loses everything.
+  </p>
+</div>
+
+<!-- ════════════════════════════════════════ SLIDE 3: SOLUTION ════════════════════════════════════════ -->
+<div class="slide">
+  <div class="corner-mark">!</div>
+  <h3>The Solution</h3>
+  <h2>Hardware-Isolated Verification</h2>
+
+  <div class="grid-2">
+    <div>
+      <p>Exploits are <span class="accent bold">encrypted to an AWS Nitro Enclave</span> —
+      a hardware-isolated VM with no network, no storage, no shell access.</p>
+      <br>
+      <p>The enclave verifies the exploit works, creates a marketplace listing,
+      and re-encrypts for the buyer. <span class="bold">The platform operator never sees the plaintext.</span></p>
+      <br>
+      <ul>
+        <li>Seller encrypts PoC client-side (ECIES P-384)</li>
+        <li>Database stores only ciphertext</li>
+        <li>Enclave decrypts, runs, destroys on termination</li>
+        <li>Only pass/fail leaves the enclave</li>
+      </ul>
+    </div>
+    <div>
+      <div class="code" style="font-size: 12px;">
+<span class="cmt"># Seller's perspective:</span>
+
+$ ndai-seal attest https://zdayzk.com
+  <span class="str">PCR0: 97663b18...f9b2f7</span>
+  <span class="str">Mode: nitro (AWS hardware)</span>
+
+$ ndai-seal verify-pcr0 --pcr0 97663b18...
+  <span class="green">MATCH — on-chain registry ✓</span>
+
+$ ndai-seal encrypt \
+    --poc exploit.sh \
+    --key enclave.der
+  <span class="str">Sealed: 196 bytes → sealed.bin</span>
+  <span class="str">Only the enclave can decrypt.</span>
+</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ SLIDE 4: FLOW ════════════════════════════════════════ -->
+<div class="slide">
+  <h3>How It Works</h3>
+  <h2>Zero-Knowledge Transfer Protocol</h2>
+
+  <div class="flow" style="flex-wrap: wrap; justify-content: center;">
+    <div class="flow-step">
+      <div class="step-label">Seller</div>
+      <div class="step-value">Writes PoC</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step active-step">
+      <div class="step-label">Browser</div>
+      <div class="step-value accent">ECIES Encrypt</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <div class="step-label">Platform</div>
+      <div class="step-value">Stores Ciphertext</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step active-step">
+      <div class="step-label">Nitro Enclave</div>
+      <div class="step-value accent">Decrypt + Run</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <div class="step-label">Oracle</div>
+      <div class="step-value green">ACE Verified</div>
+    </div>
+  </div>
+
+  <div class="flow" style="flex-wrap: wrap; justify-content: center; margin-top: 16px;">
+    <div class="flow-step">
+      <div class="step-label">Auto</div>
+      <div class="step-value">Listing Created</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <div class="step-label">Buyer</div>
+      <div class="step-value">Deposits ETH</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step active-step">
+      <div class="step-label">Enclave</div>
+      <div class="step-value accent">Re-encrypt</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <div class="step-label">Buyer</div>
+      <div class="step-value green">Decrypt Exploit</div>
+    </div>
+  </div>
+
+  <p class="dim" style="text-align: center; margin-top: 24px; font-size: 13px;">
+    Platform sees <span class="accent">ONLY ciphertext</span> at every step.
+    Exploit plaintext exists only inside the enclave and on the buyer's machine.
+  </p>
+</div>
+
+<!-- ════════════════════════════════════════ SLIDE 5: TRUST ════════════════════════════════════════ -->
+<div class="slide">
+  <h3>Trust Model</h3>
+  <h2>Operator Cannot Cheat</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Attack</th>
+        <th>Defense</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Read PoC from database</td>
+        <td>DB stores ECIES ciphertext only</td>
+        <td><span class="green">■</span> Closed</td>
+      </tr>
+      <tr>
+        <td>Modify enclave code to exfiltrate</td>
+        <td>PCR0 changes → seller detects before sending</td>
+        <td><span class="green">■</span> Closed</td>
+      </tr>
+      <tr>
+        <td>Read enclave memory from host</td>
+        <td>Nitro hardware physically prevents it</td>
+        <td><span class="green">■</span> Closed</td>
+      </tr>
+      <tr>
+        <td>Intercept vsock traffic</td>
+        <td>PoC is ECIES-encrypted to enclave key</td>
+        <td><span class="green">■</span> Closed</td>
+      </tr>
+      <tr>
+        <td>Fake the attestation</td>
+        <td>COSE Sign1 cert chain → AWS Root CA (hardware)</td>
+        <td><span class="green">■</span> Closed</td>
+      </tr>
+      <tr>
+        <td>Replay old attestation</td>
+        <td>Nonce + timestamp freshness check</td>
+        <td><span class="green">■</span> Closed</td>
+      </tr>
+      <tr>
+        <td>Claim different exploit submitted</td>
+        <td>Commitment hash published at trigger time</td>
+        <td><span class="green">■</span> Closed</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="margin-top: 24px;">
+    <span class="tag tag-green">PCR0 ON-CHAIN</span>
+    <span style="font-size: 13px; color: var(--dim); margin-left: 12px;">
+      Ethereum Sepolia: <span style="color: #888;">0x472c8e22...de119F4</span>
+    </span>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ SLIDE 6: ORACLE ════════════════════════════════════════ -->
+<div class="slide">
+  <h3>Capability Oracle</h3>
+  <h2>The Seller Doesn't Define Success</h2>
+
+  <div class="grid-2">
+    <div>
+      <p style="margin-bottom: 20px;">The enclave plants <span class="accent bold">random canary values</span> in the target filesystem.
+      The seller's PoC must retrieve them to prove capability.</p>
+
+      <div class="code" style="font-size: 12px;">
+<span class="cmt"># Inside the enclave:</span>
+canary = <span class="str">os.urandom(16).hex()</span>  <span class="cmt"># random</span>
+
+<span class="cmt"># ACE canary (world-readable)</span>
+write(<span class="str">"/var/lib/ndai-oracle/ace_canary"</span>, canary)
+
+<span class="cmt"># LPE canary (root-only)</span>
+write(<span class="str">"/var/lib/ndai-oracle/lpe_canary"</span>, canary)
+chmod(0o600)
+
+<span class="cmt"># Run PoC → check stdout for canary</span>
+<span class="kw">if</span> canary <span class="kw">in</span> poc_stdout:
+    <span class="str">capability = VERIFIED</span>
+</div>
+    </div>
+    <div>
+      <table>
+        <thead>
+          <tr><th>Capability</th><th>Proof</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="accent">ACE</td><td>Read world-readable canary (code execution)</td></tr>
+          <tr><td class="accent">LPE</td><td>Read root-only canary (privilege escalation)</td></tr>
+          <tr><td>Info Leak</td><td>Read canary from process memory</td></tr>
+          <tr><td>Callback</td><td>Connect to localhost listener with token</td></tr>
+          <tr><td>Crash</td><td>Trigger SIGSEGV/SIGABRT</td></tr>
+          <tr><td>DoS</td><td>Service fails health check</td></tr>
+        </tbody>
+      </table>
+      <p class="dim" style="font-size: 12px; margin-top: 16px;">
+        Canary is generated fresh per run. Cannot be predicted or hardcoded.
+        Reliability measured across N runs (default 3).
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ SLIDE 7: LIVE DEMO ════════════════════════════════════════ -->
+<div class="slide">
+  <h3>Live Results</h3>
+  <h2>Real Exploits, Real Verification</h2>
+
+  <div class="grid-3">
+    <div class="card">
+      <span class="tag tag-accent mb-2" style="display:block; width:fit-content;">CVE-2024-3094</span>
+      <h4 style="margin-top: 12px;">XZ Utils Backdoor</h4>
+      <p>Pre-auth RCE via backdoored liblzma → RSA_public_decrypt hook → Ed448-signed command payload</p>
+      <hr>
+      <div style="font-size: 12px; color: var(--green);">
+        ACE VERIFIED<br>
+        <span class="dim">Docker target on AWS EC2</span>
+      </div>
+    </div>
+    <div class="card">
+      <span class="tag tag-green mb-2" style="display:block; width:fit-content;">VERIFIED</span>
+      <h4 style="margin-top: 12px;">Apache httpd</h4>
+      <p>ACE capability verified via sealed PoC submission. Canary oracle match. 100% reliability (3/3 runs).</p>
+      <hr>
+      <div style="font-size: 12px; color: var(--green);">
+        SEALED POC → VERIFIED → LISTING CREATED<br>
+        <span class="dim">Per-target Nitro EIF, PCR0 on-chain</span>
+      </div>
+    </div>
+    <div class="card">
+      <span class="tag tag-dim mb-2" style="display:block; width:fit-content;">8 TARGETS</span>
+      <h4 style="margin-top: 12px;">Target Catalog</h4>
+      <p>Apache, Chrome, Firefox, XZ Utils, OpenSSH, Ubuntu LTS, Windows Server, iOS</p>
+      <hr>
+      <div style="font-size: 12px; color: #888;">
+        Per-target Dockerfiles<br>
+        <span class="dim">Reproducible builds → deterministic PCR0</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: 30px; text-align: center;">
+    <div class="verified" style="display: inline-flex;">FULL E2E: SELLER SEALS → ENCLAVE VERIFIES → BUYER DECRYPTS</div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ SLIDE 8: ON-CHAIN ════════════════════════════════════════ -->
+<div class="slide">
+  <h3>On-Chain</h3>
+  <h2>Immutable Accountability</h2>
+
+  <div class="grid-2">
+    <div>
+      <div class="card" style="margin-bottom: 16px;">
+        <h4 class="accent">PCR0Registry.sol</h4>
+        <p>Enclave code hash published on-chain with build spec hash + Dockerfile URI.
+        Anyone can call <code style="color:var(--accent)">verifyPCR0()</code> and compare against their own local build.</p>
+        <div style="margin-top: 12px; font-size: 11px; color: var(--dim);">
+          0x472c8e2239A5AFe29BB828479c5F4bCf4de119F4
+        </div>
+      </div>
+      <div class="card" style="margin-bottom: 16px;">
+        <h4>VulnEscrow.sol</h4>
+        <p>Per-deal escrow with decay-adjusted pricing, patch oracle, and 90/10 platform split.</p>
+      </div>
+      <div class="card">
+        <h4>BundleRegistry.sol</h4>
+        <p>Frontend JS bundle hash on-chain. Users verify they're running unmodified code.</p>
+      </div>
+    </div>
+    <div>
+      <div class="code" style="font-size: 12px;">
+<span class="cmt">// PCR0Registry — Solidity</span>
+
+<span class="kw">struct</span> ImageRecord {
+    bytes32 pcr0High;
+    bytes16 pcr0Low;
+    bytes32 buildSpecHash;
+    <span class="str">string</span>  buildSpecURI;
+    <span class="str">string</span>  eifVersion;
+    uint256 timestamp;
+}
+
+<span class="cmt">// Seller verification:</span>
+(registered, specHash, uri)
+  = registry.<span class="kw">verifyPCR0</span>(
+      pcr0High, pcr0Low
+    );
+
+<span class="cmt">// returns: (true, 0x0d51c2...,</span>
+<span class="cmt">//   "github.com/.../Dockerfile")</span>
+</div>
+      <p class="dim" style="font-size: 12px; margin-top: 12px;">
+        Ethereum Sepolia testnet. Event logs are permanent — operator cannot retroactively change published PCR0 values.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ SLIDE 9: CRYPTO ════════════════════════════════════════ -->
+<div class="slide">
+  <h3>Cryptography</h3>
+  <h2>Defense in Depth</h2>
+
+  <div class="grid-4 gap-sm">
+    <div class="card">
+      <h4 style="color: var(--accent);">ECIES</h4>
+      <p>P-384 ECDH<br>HKDF-SHA384<br>AES-256-GCM</p>
+      <div class="dim" style="font-size: 11px; margin-top: 8px;">Sealed PoC delivery</div>
+    </div>
+    <div class="card">
+      <h4 style="color: var(--accent);">Signal Protocol</h4>
+      <p>X3DH key agreement<br>Double Ratchet<br>E2E messaging</p>
+      <div class="dim" style="font-size: 11px; margin-top: 8px;">Seller ↔ Buyer chat</div>
+    </div>
+    <div class="card">
+      <h4 style="color: var(--accent);">Ed25519</h4>
+      <p>Passphrase → argon2id<br>Deterministic keys<br>ZK identity</p>
+      <div class="dim" style="font-size: 11px; margin-top: 8px;">No email, no passwords</div>
+    </div>
+    <div class="card">
+      <h4 style="color: var(--accent);">Shamir SSS</h4>
+      <p>k-of-n threshold<br>GF(p), 256-bit prime<br>Key reconstruction</p>
+      <div class="dim" style="font-size: 11px; margin-top: 8px;">Invention key splitting</div>
+    </div>
+  </div>
+
+  <div class="grid-4 gap-sm" style="margin-top: 16px;">
+    <div class="card">
+      <h4>NSM Attestation</h4>
+      <p>COSE Sign1<br>CBOR encoding<br>AWS Root CA</p>
+      <div class="dim" style="font-size: 11px; margin-top: 8px;">Hardware proof</div>
+    </div>
+    <div class="card">
+      <h4>Nash Bargaining</h4>
+      <p>P* = (v_b + α₀·ω̂) / 2<br>Bilateral resolution<br>Hard + soft constraints</p>
+      <div class="dim" style="font-size: 11px; margin-top: 8px;">Fair pricing</div>
+    </div>
+    <div class="card">
+      <h4>Shelf-Life Decay</h4>
+      <p>V(t) = V₀·e^(-λt)<br>Category-specific λ<br>Patch probability</p>
+      <div class="dim" style="font-size: 11px; margin-top: 8px;">0day depreciation</div>
+    </div>
+    <div class="card">
+      <h4>Sealed Delivery</h4>
+      <p>K_d = random(32)<br>AES(K_d, exploit)<br>ECIES(buyer, K_d)</p>
+      <div class="dim" style="font-size: 11px; margin-top: 8px;">ZK transfer</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ SLIDE 10: ARCHITECTURE ════════════════════════════════════════ -->
+<div class="slide">
+  <h3>Architecture</h3>
+  <h2>Production System</h2>
+
+  <div class="grid-2">
+    <div>
+      <div class="stats" style="gap: 40px;">
+        <div class="stat">
+          <div class="stat-val" style="font-size: 36px;">23</div>
+          <div class="stat-label">API Routers</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" style="font-size: 36px;">18</div>
+          <div class="stat-label">DB Models</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" style="font-size: 36px;">8</div>
+          <div class="stat-label">Known Targets</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" style="font-size: 36px;">7</div>
+          <div class="stat-label">Contracts</div>
+        </div>
+      </div>
+
+      <hr>
+
+      <ul style="font-size: 13px;">
+        <li><span class="bold">Backend:</span> Python 3.11, FastAPI, SQLAlchemy async, PostgreSQL, Redis</li>
+        <li><span class="bold">Frontend:</span> React 19, TypeScript, Tailwind, esbuild</li>
+        <li><span class="bold">TEE:</span> AWS Nitro Enclaves (c5.xlarge), AF_VSOCK</li>
+        <li><span class="bold">Chain:</span> Base Sepolia, Foundry, Solidity 0.8.20+</li>
+        <li><span class="bold">Crypto:</span> @noble/curves, cryptography, cbor2</li>
+      </ul>
+    </div>
+    <div>
+      <div class="code" style="font-size: 11px;">
+<span class="cmt">┌─────────────┐     ┌──────────────┐</span>
+<span class="cmt">│</span> <span class="str">zdayzk.com</span>  <span class="cmt">│     │</span> <span class="str">shape.dcwl</span>  <span class="cmt">│</span>
+<span class="cmt">│</span> frontend-zk  <span class="cmt">│     │</span> frontend     <span class="cmt">│</span>
+<span class="cmt">└──────┬──────┘     └──────┬───────┘</span>
+       <span class="cmt">│</span>                    <span class="cmt">│</span>
+<span class="cmt">┌──────┴────────────────────┴───────┐</span>
+<span class="cmt">│</span>          <span class="kw">FastAPI Backend</span>          <span class="cmt">│</span>
+<span class="cmt">│</span>  PostgreSQL │ Redis │ 23 routers  <span class="cmt">│</span>
+<span class="cmt">└──────┬──────────────┬─────────────┘</span>
+       <span class="cmt">│</span>              <span class="cmt">│</span>
+<span class="cmt">┌──────┴──────┐  ┌────┴────────────┐</span>
+<span class="cmt">│</span> <span class="accent">Nitro EC2</span>   <span class="cmt">│  │</span> <span class="str">Base Sepolia</span>     <span class="cmt">│</span>
+<span class="cmt">│</span> c5.xlarge   <span class="cmt">│  │</span> VulnEscrow       <span class="cmt">│</span>
+<span class="cmt">│</span> vsock:5000  <span class="cmt">│  │</span> PCR0Registry     <span class="cmt">│</span>
+<span class="cmt">│</span> 1800MB enc  <span class="cmt">│  │</span> PokerTable       <span class="cmt">│</span>
+<span class="cmt">└─────────────┘  └─────────────────┘</span>
+</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ SLIDE 11: WHAT'S NEXT ════════════════════════════════════════ -->
+<div class="slide">
+  <h3>Roadmap</h3>
+  <h2>What's Next</h2>
+
+  <div class="grid-3">
+    <div class="card" style="border-color: var(--accent);">
+      <h4 class="accent">Production Nitro</h4>
+      <p>Fix COSE Sign1 cert chain verification. Per-target EIF builds. Warm enclave pool for instant attestation.</p>
+    </div>
+    <div class="card" style="border-color: var(--accent);">
+      <h4 class="accent">More CVE Reproductions</h4>
+      <p>OpenSSH regreSSHion (CVE-2024-6387). Chrome sandbox escapes. Ubuntu kernel LPE. Real exploits, real verification.</p>
+    </div>
+    <div class="card" style="border-color: var(--accent);">
+      <h4 class="accent">Buyer Escrow</h4>
+      <p>On-chain payment-gated delivery. Buyer deposits → enclave seals → payment releases → buyer decrypts. Smart contract mediation.</p>
+    </div>
+  </div>
+
+  <div class="grid-3" style="margin-top: 16px;">
+    <div class="card">
+      <h4>Target Inspection</h4>
+      <p>Web terminal for sellers to poke the target environment before submitting. Verify packages, configs, services match spec.</p>
+    </div>
+    <div class="card">
+      <h4>ndai-seal CLI</h4>
+      <p>pip-installable package. Headless attestation verification + PoC encryption. No browser required.</p>
+      <div class="verified" style="margin-top: 8px; font-size: 10px;">SHIPPED</div>
+    </div>
+    <div class="card">
+      <h4>Buyer RFPs</h4>
+      <p>Buyers post bounties for specific targets. Sellers respond with sealed proposals. Reverse marketplace.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ SLIDE 12: LINKS ════════════════════════════════════════ -->
+<div class="slide slide-title">
+  <h3>Links</h3>
+  <h1 style="font-size: 56px;">ZDAYZK<span class="accent">.</span>COM</h1>
+
+  <div style="margin-top: 30px; text-align: left; display: inline-block;">
+    <table style="width: auto;">
+      <tbody>
+        <tr>
+          <td class="dim" style="padding-right: 30px;">Paper</td>
+          <td>arxiv.org/abs/2502.07924</td>
+        </tr>
+        <tr>
+          <td class="dim">Marketplace</td>
+          <td class="accent">zdayzk.com</td>
+        </tr>
+        <tr>
+          <td class="dim">GitHub</td>
+          <td>github.com/discordwell/ndai-hackathon</td>
+        </tr>
+        <tr>
+          <td class="dim">PCR0 Registry</td>
+          <td style="font-size: 12px;">0x472c8e2239A5AFe29BB828479c5F4bCf4de119F4</td>
+        </tr>
+        <tr>
+          <td class="dim">Chain</td>
+          <td>Ethereum Sepolia / Base Sepolia</td>
+        </tr>
+        <tr>
+          <td class="dim">CLI Tool</td>
+          <td>pip install ndai-seal</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="margin-top: 40px;">
+    <span class="tag tag-accent">VERIFICATION: AWS NITRO ENCLAVES</span>
+    <span class="tag tag-dim" style="margin-left: 8px;">SETTLEMENT: BASE SEPOLIA</span>
+    <span class="tag tag-dim" style="margin-left: 8px;">FEE: 10%</span>
+  </div>
+</div>
+
+</div><!-- /deck -->
+
+<script>
+const slides = document.querySelectorAll('.slide');
+const progress = document.getElementById('progress');
+const slideNum = document.getElementById('slideNum');
+let current = 0;
+
+function show(n) {
+  if (n < 0 || n >= slides.length) return;
+  slides[current].classList.remove('active');
+  current = n;
+  slides[current].classList.add('active');
+  progress.style.width = ((current + 1) / slides.length * 100) + '%';
+  slideNum.textContent = (current + 1) + ' / ' + slides.length;
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    show(current + 1);
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    show(current - 1);
+  } else if (e.key === 'Home') {
+    show(0);
+  } else if (e.key === 'End') {
+    show(slides.length - 1);
+  }
+});
+
+// Touch support
+let touchStartX = 0;
+document.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
+document.addEventListener('touchend', (e) => {
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  if (Math.abs(dx) > 50) {
+    dx < 0 ? show(current + 1) : show(current - 1);
+  }
+});
+
+// Click to advance
+document.addEventListener('click', (e) => {
+  if (e.clientX > window.innerWidth / 2) show(current + 1);
+  else show(current - 1);
+});
+
+show(0);
+</script>
+
+</body>
+</html>
