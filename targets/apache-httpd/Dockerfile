@@ -11,16 +11,21 @@
 
 FROM ubuntu:22.04
 
-# Pin package versions for reproducibility
+# Install target software
+# NOTE: Version pinning commented out — Ubuntu repos drop old patch versions.
+# Reproducibility comes from the Docker image digest (sha256), not version strings.
+# The PCR0 is deterministic for a given Docker image content.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    apache2=2.4.52-1ubuntu4.3 \
-    apache2-utils=2.4.52-1ubuntu4.3 \
-    curl=7.81.0-1ubuntu1.13 \
-    python3=3.10.6-1~22.04.1 \
-    python3-pip=22.0.2+dfsg-1ubuntu0.4 \
+    apache2 \
+    apache2-utils \
+    curl \
+    python3 \
+    python3-pip \
     ca-certificates \
     procps \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && echo "apache2 $(dpkg -s apache2 | grep Version)" > /VERSIONS.txt \
+    && echo "curl $(dpkg -s curl | grep Version)" >> /VERSIONS.txt
 
 # Create oracle directory (canary files planted at verification time)
 RUN mkdir -p /var/lib/ndai-oracle && chmod 755 /var/lib/ndai-oracle
