@@ -47,7 +47,10 @@ async def get_attestation(
     """
     from ndai.config import settings
 
-    nonce_bytes = bytes.fromhex(nonce) if nonce else b""
+    try:
+        nonce_bytes = bytes.fromhex(nonce) if nonce else b""
+    except ValueError:
+        nonce_bytes = nonce.encode() if nonce else b""
 
     if settings.tee_mode == "nitro":
         return await _get_nitro_attestation(nonce_bytes)
