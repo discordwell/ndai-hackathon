@@ -8,10 +8,18 @@ export type NegotiationPhase =
   | "complete"
   | "round";
 
+export interface ProgressEntry {
+  phase: NegotiationPhase;
+  message: string;
+  data: Record<string, any>;
+  timestamp: number;
+}
+
 interface UseNegotiationStreamResult {
   phase: NegotiationPhase | null;
   isComplete: boolean;
   error: string | null;
+  progressLog: ProgressEntry[];
   connect: () => void;
   disconnect: () => void;
 }
@@ -23,6 +31,7 @@ export function useNegotiationStream(
   const [phase, setPhase] = useState<NegotiationPhase | null>(null);
   const [isComplete, setIsComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progressLog, setProgressLog] = useState<ProgressEntry[]>([]);
   const esRef = useRef<EventSource | null>(null);
 
   const disconnect = useCallback(() => {
@@ -36,6 +45,7 @@ export function useNegotiationStream(
     if (!agreementId || !token) return;
 
     disconnect();
+    setProgressLog([]);
 
     // SSE doesn't support Authorization headers, pass token as query param
     const url = `/api/v1/negotiations/${agreementId}/stream?token=${encodeURIComponent(token)}`;
@@ -52,8 +62,24 @@ export function useNegotiationStream(
     ];
 
     for (const p of phases) {
-      es.addEventListener(p, () => {
+      es.addEventListener(p, (event: MessageEvent) => {
         setPhase(p);
+
+        let data: Record<string, any> = {};
+        try {
+          data = JSON.parse(event.data || "{}");
+        } catch {
+          // ignore parse errors
+        }
+
+        const message = data.message || "";
+        if (message) {
+          setProgressLog((prev) => [
+            ...prev,
+            { phase: p, message, data, timestamp: Date.now() },
+          ]);
+        }
+
         if (p === "complete") {
           setIsComplete(true);
           es.close();
@@ -73,5 +99,5 @@ export function useNegotiationStream(
     return disconnect;
   }, [disconnect]);
 
-  return { phase, isComplete, error, connect, disconnect };
+  return { phase, isComplete, error, progressLog, connect, disconnect };
 }

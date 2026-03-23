@@ -16,6 +16,7 @@ class AgreementParamsRequest(BaseModel):
 class AgreementResponse(BaseModel):
     id: str
     invention_id: str
+    invention_title: str | None = None
     seller_id: str
     buyer_id: str
     status: str
@@ -24,6 +25,7 @@ class AgreementResponse(BaseModel):
     theta: float | None
     escrow_address: str | None = None
     escrow_tx_hash: str | None = None
+    created_at: str | None = None
 
 
 class NegotiationOutcomeResponse(BaseModel):

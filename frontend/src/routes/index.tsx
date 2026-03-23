@@ -9,6 +9,7 @@ import { PropsLayout } from "../layouts/PropsLayout";
 import { SellerDashboard } from "../pages/seller/SellerDashboard";
 import { InventionListPage } from "../pages/seller/InventionListPage";
 import { InventionCreatePage } from "../pages/seller/InventionCreatePage";
+import { InventionDetailPage } from "../pages/seller/InventionDetailPage";
 import { SellerAgreementListPage } from "../pages/seller/SellerAgreementListPage";
 import { SellerAgreementDetailPage } from "../pages/seller/SellerAgreementDetailPage";
 import { BuyerDashboard } from "../pages/buyer/BuyerDashboard";
@@ -45,6 +46,7 @@ import { ZKDealsListPage } from "../pages/zk/ZKDealsListPage";
 import { ZKIdentityPage } from "../pages/zk/ZKIdentityPage";
 import { ZKAuctionPage } from "../pages/zk/ZKAuctionPage";
 import { ZKAuctionCreatePage } from "../pages/zk/ZKAuctionCreatePage";
+import { NotFoundPage } from "../pages/NotFoundPage";
 
 function useHash(): string {
   const [hash, setHash] = useState(window.location.hash || "#/login");
@@ -118,6 +120,14 @@ export function Router() {
         <InventionCreatePage />
       </SellerLayout>
     );
+  if (path.match(/^\/seller\/inventions\/[^/]+$/) && path !== "/seller/inventions/new") {
+    const id = path.replace("/seller/inventions/", "");
+    return (
+      <SellerLayout>
+        <InventionDetailPage id={id} />
+      </SellerLayout>
+    );
+  }
   if (path === "/seller/agreements")
     return (
       <SellerLayout>
@@ -196,7 +206,6 @@ export function Router() {
     return null;
   }
 
-  // Unknown route for authenticated user — go to dashboard
-  window.location.hash = role === "seller" ? "#/seller" : "#/buyer";
-  return null;
+  // Unknown route for authenticated user — show 404
+  return <NotFoundPage />;
 }

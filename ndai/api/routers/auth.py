@@ -29,7 +29,7 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
         display_name=request.display_name,
     )
     token = create_access_token(str(user.id))
-    return TokenResponse(access_token=token, role=user.role)
+    return TokenResponse(access_token=token, role=user.role, display_name=user.display_name)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -41,4 +41,4 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
             detail="Invalid credentials",
         )
     token = create_access_token(str(user.id))
-    return TokenResponse(access_token=token, role=user.role)
+    return TokenResponse(access_token=token, role=user.role, display_name=user.display_name)

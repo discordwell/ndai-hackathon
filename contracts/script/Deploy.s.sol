@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import "forge-std/Script.sol";
 import "../src/PCR0Registry.sol";
 import "../src/VulnEscrowFactory.sol";
+import "../src/NdaiEscrowFactory.sol";
 import "../src/VerificationDeposit.sol";
 import "../src/SeriousCustomer.sol";
 import "../src/VulnAuctionFactory.sol";
@@ -21,7 +22,10 @@ contract Deploy is Script {
         console.log("PCR0Registry deployed at:", address(registry));
 
         VulnEscrowFactory factory = new VulnEscrowFactory(PLATFORM_ADDRESS, address(registry));
-        console.log("Factory deployed at:", address(factory));
+        console.log("VulnEscrowFactory deployed at:", address(factory));
+
+        NdaiEscrowFactory ndaiFactory = new NdaiEscrowFactory();
+        console.log("NdaiEscrowFactory deployed at:", address(ndaiFactory));
 
         VerificationDeposit vDeposit = new VerificationDeposit(OPERATOR_ADDRESS, PLATFORM_ADDRESS);
         console.log("VerificationDeposit deployed at:", address(vDeposit));

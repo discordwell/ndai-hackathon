@@ -4,6 +4,7 @@ import type { TokenResponse } from "../api/types";
 interface AuthState {
   token: string | null;
   role: string | null;
+  displayName: string | null;
   isAuthenticated: boolean;
 }
 
@@ -18,15 +19,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [auth, setAuth] = useState<AuthState>(() => {
     const token = localStorage.getItem("token");
     const role = localStorage.getItem("role");
-    return { token, role, isAuthenticated: !!token };
+    const displayName = localStorage.getItem("displayName");
+    return { token, role, displayName, isAuthenticated: !!token };
   });
 
   const login = useCallback((response: TokenResponse) => {
     localStorage.setItem("token", response.access_token);
     localStorage.setItem("role", response.role);
+    if ((response as any).display_name) {
+      localStorage.setItem("displayName", (response as any).display_name);
+    }
     setAuth({
       token: response.access_token,
       role: response.role,
+      displayName: (response as any).display_name || null,
       isAuthenticated: true,
     });
   }, []);
@@ -34,7 +40,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(() => {
     localStorage.removeItem("token");
     localStorage.removeItem("role");
-    setAuth({ token: null, role: null, isAuthenticated: false });
+    localStorage.removeItem("displayName");
+    setAuth({ token: null, role: null, displayName: null, isAuthenticated: false });
   }, []);
 
   return (

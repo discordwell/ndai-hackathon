@@ -59,11 +59,21 @@ async def get_invention(db: AsyncSession, invention_id: uuid.UUID) -> Invention 
     return result.scalar_one_or_none()
 
 
-async def list_inventions_by_seller(db: AsyncSession, seller_id: uuid.UUID) -> list[Invention]:
+async def list_inventions_by_seller(
+    db: AsyncSession, seller_id: uuid.UUID, limit: int = 50, offset: int = 0
+) -> list[Invention]:
     result = await db.execute(
-        select(Invention).where(Invention.seller_id == seller_id)
+        select(Invention).where(Invention.seller_id == seller_id).limit(limit).offset(offset)
     )
     return list(result.scalars().all())
+
+
+async def update_invention(db: AsyncSession, invention: Invention, **kwargs) -> Invention:
+    for key, value in kwargs.items():
+        setattr(invention, key, value)
+    await db.commit()
+    await db.refresh(invention)
+    return invention
 
 
 async def list_active_inventions(db: AsyncSession) -> list[Invention]:

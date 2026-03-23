@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -13,6 +13,9 @@ from ndai.models.user import Base
 
 class Agreement(Base):
     __tablename__ = "agreements"
+    __table_args__ = (
+        UniqueConstraint("invention_id", "buyer_id", name="uq_agreement_invention_buyer"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     invention_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("inventions.id"), nullable=False)

@@ -40,6 +40,17 @@ export interface InventionResponse {
   anonymized_summary: string | null;
   category: string | null;
   status: string;
+  full_description?: string | null;
+  technical_domain?: string | null;
+  development_stage?: string | null;
+  self_assessed_value?: number | null;
+  outside_option_value?: number | null;
+  novelty_claims?: string[] | null;
+  prior_art_known?: string[] | null;
+  potential_applications?: string[] | null;
+  confidential_sections?: string[] | null;
+  max_disclosure_fraction?: number | null;
+  created_at?: string | null;
 }
 
 export interface ListingResponse {
@@ -59,6 +70,7 @@ export interface AgreementCreateRequest {
 export interface AgreementResponse {
   id: string;
   invention_id: string;
+  invention_title?: string | null;
   seller_id: string;
   buyer_id: string;
   status: string;
@@ -67,6 +79,7 @@ export interface AgreementResponse {
   theta: number | null;
   escrow_address?: string | null;
   escrow_tx_hash?: string | null;
+  created_at?: string | null;
 }
 
 export interface AgreementParamsRequest {

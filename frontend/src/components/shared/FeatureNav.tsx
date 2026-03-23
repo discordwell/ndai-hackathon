@@ -18,8 +18,15 @@ export function FeatureNav() {
   }, []);
 
   return (
-    <div className="bg-ndai-700 text-white px-4 py-2 flex items-center gap-6">
-      <span className="font-bold text-sm tracking-wide mr-4">TRUSTKIT</span>
+    <div className="bg-gradient-to-r from-ndai-800 to-ndai-700 text-white px-4 py-2 flex items-center gap-6">
+      <div className="flex items-center gap-2 mr-4">
+        <svg className="w-5 h-5 text-ndai-200" viewBox="0 0 48 48" fill="none">
+          <path d="M24 4L6 12v12c0 11 8 18 18 22 10-4 18-11 18-22V12L24 4z" fill="currentColor" />
+          <circle cx="24" cy="22" r="3.5" fill="none" stroke="white" strokeWidth="1.5" />
+          <rect x="22.75" y="25" width="2.5" height="4" rx="0.75" fill="white" />
+        </svg>
+        <span className="font-bold text-sm tracking-wide">TRUSTKIT</span>
+      </div>
       {FEATURES.map((f) => {
         const active = f.prefixes.some((p) => hash.startsWith(p));
         return (

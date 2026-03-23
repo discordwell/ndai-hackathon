@@ -37,15 +37,24 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    from ndai.config import settings
+
+    cors_origins = getattr(settings, "cors_origins", None) or ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Restrict in production
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-    from ndai.config import settings
+    # Security headers
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        return response
 
     if settings.privacy_mode:
         from ndai.api.middleware.privacy import PrivacyMiddleware, CSPMiddleware

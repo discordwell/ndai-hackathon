@@ -23,7 +23,7 @@ export function BuyerAgreementDetailPage({ id }: { id: string }) {
   const [alpha0, setAlpha0] = useState("0.3");
   const [escrowData, setEscrowData] = useState<any>(null);
 
-  const { phase, isComplete, connect: connectSSE } = useNegotiationStream(id, token || "");
+  const { phase, isComplete, progressLog, connect: connectSSE } = useNegotiationStream(id, token || "");
 
   async function load() {
     try {
@@ -110,7 +110,7 @@ export function BuyerAgreementDetailPage({ id }: { id: string }) {
 
   async function pollStatus() {
     let retries = 0;
-    const maxRetries = 60;
+    const maxRetries = 30;
     const poll = async () => {
       try {
         const s = await getNegotiationStatus(id);
@@ -125,7 +125,8 @@ export function BuyerAgreementDetailPage({ id }: { id: string }) {
       } catch {
         retries++;
         if (retries < maxRetries) {
-          setTimeout(poll, 3000);
+          const delay = Math.min(1000 * Math.pow(2, retries), 30000);
+          setTimeout(poll, delay);
         } else {
           setError("Polling timed out. Refresh the page to check status.");
         }
@@ -268,10 +269,13 @@ export function BuyerAgreementDetailPage({ id }: { id: string }) {
 
       {isNegotiating && (
         <Card className="mb-6">
-          <div className="font-medium mb-2">Negotiation in progress...</div>
-          <NegotiationProgress phase={phase} />
-          <div className="text-sm text-gray-500 mt-2">
-            AI agents are negotiating inside the TEE
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+            <span className="font-medium">Negotiation in progress</span>
+          </div>
+          <NegotiationProgress phase={phase} progressLog={progressLog} />
+          <div className="text-xs text-gray-400 mt-3">
+            AI agents are negotiating inside the Trusted Execution Environment
           </div>
         </Card>
       )}

@@ -2,6 +2,14 @@
 
 ## Session Summaries
 
+### 2026-03-22T~24:00Z — NDAI Negotiation System Polish (Production + Presentation Ready)
+- **Phase 1 — Live Negotiation Experience + Brand**: Rich SSE progress events (session.py emits meaningful data payloads at each phase: seller disclosure, buyer evaluation, Nash resolution, multi-round offers). Frontend hook parses SSE data into progressLog array. NegotiationProgress component shows live message log with fade-in animations and phase-colored icons. Login page redesigned: SVG shield logo, "Arrow's Paradox, Solved." tagline, gradient bg. FeatureNav + Sidebar: logo, icons for nav items, user display name. Tailwind animations added (fadeSlideUp, fadeIn, scaleIn).
+- **Phase 2 — Dashboard Richness + Invention Management**: Both dashboards (53 LOC each → ~120 LOC) now have: recent activity feeds (last 5 agreements with StatusBadge + relative timestamps), onboarding cards (3-step guide when empty), contextual KPI subtitles, pending actions section (buyer). Invention detail page: full read-only view of all fields, value parameter bars, novelty claims, edit/withdraw actions. Backend: PUT/DELETE endpoints for inventions, expanded InventionResponse (5 → 16 fields). Marketplace: search input, category filter chips, development stage filters, stage dots on ListingCard. API client: added put/del methods.
+- **Phase 3 — Production Hardening**: UniqueConstraint on Agreement(invention_id, buyer_id). Toast notification system (ToastProvider/useToast). Exponential backoff on polling (2^retries, cap 30s). CORS: configurable origins (no more `*`). Security headers: X-Content-Type-Options, X-Frame-Options.
+- **Phase 4 — Seller Experience + 404**: Seller agreement detail page enriched: invention title, status timeline, live NegotiationProgress with SSE, collapsible audit trail, timestamps. Agreement list pages: invention titles, relative timestamps, sorted newest first. 404 page with branded shield icon.
+- **Phase 5 — Contracts + API**: NdaiEscrowFactory added to Deploy.s.sol. NatSpec documentation on NdaiEscrow + NdaiEscrowFactory. Backend pagination (limit/offset) on inventions endpoint. AgreementResponse expanded with invention_title + created_at.
+- **Tests**: 710 unit tests passing (1 pre-existing failure in vuln_verify_builder). 37 NdaiEscrow contract tests passing. Frontend builds clean.
+
 ### 2026-03-22T~23:00Z — Recall System Polish (Production + Presentation Ready)
 - **Security**: AES-256-GCM encryption for secrets at rest (new `ndai/crypto/secret_encryption.py`, falls back to base64 if no key). Fixed race condition in `try_claim_use` — single atomic UPDATE with CASE for depletion. Added rollback on TEE session crash (`restore_use` with revocation guard). Sanitized exception messages in audit log.
 - **New API**: `POST /secrets/{id}/revoke` endpoint (owner-only). Access log now returns `verification_data` and `requester_display_name` (via LEFT JOIN).

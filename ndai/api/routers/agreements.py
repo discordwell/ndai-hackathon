@@ -25,10 +25,11 @@ from ndai.services.audit import log_event
 router = APIRouter()
 
 
-def _agreement_response(a) -> AgreementResponse:
+def _agreement_response(a, invention_title: str | None = None) -> AgreementResponse:
     return AgreementResponse(
         id=str(a.id),
         invention_id=str(a.invention_id),
+        invention_title=invention_title,
         seller_id=str(a.seller_id),
         buyer_id=str(a.buyer_id),
         status=a.status,
@@ -37,6 +38,7 @@ def _agreement_response(a) -> AgreementResponse:
         theta=a.theta,
         escrow_address=a.escrow_address,
         escrow_tx_hash=a.escrow_tx_hash,
+        created_at=a.created_at.isoformat() if a.created_at else None,
     )
 
 
@@ -71,7 +73,14 @@ async def list_agreements(
     db: AsyncSession = Depends(get_db),
 ):
     agreements = await list_agreements_for_user(db, uuid.UUID(user_id))
-    return [_agreement_response(a) for a in agreements]
+    # Batch-fetch invention titles
+    inv_ids = {a.invention_id for a in agreements}
+    titles = {}
+    for inv_id in inv_ids:
+        inv = await get_invention(db, inv_id)
+        if inv:
+            titles[inv_id] = inv.title
+    return [_agreement_response(a, invention_title=titles.get(a.invention_id)) for a in agreements]
 
 
 @router.get("/{agreement_id}", response_model=AgreementResponse)
@@ -85,7 +94,8 @@ async def get_agreement_endpoint(
         raise HTTPException(status_code=404, detail="Not found")
     if user_id not in (str(agreement.buyer_id), str(agreement.seller_id)):
         raise HTTPException(status_code=403, detail="Not authorized")
-    return _agreement_response(agreement)
+    inv = await get_invention(db, agreement.invention_id)
+    return _agreement_response(agreement, invention_title=inv.title if inv else None)
 
 
 @router.post("/{agreement_id}/params", response_model=AgreementResponse)

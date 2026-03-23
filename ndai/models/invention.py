@@ -1,10 +1,12 @@
 """Invention ORM model."""
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Float, ForeignKey, Integer, LargeBinary, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql import func
 
 from ndai.models.user import Base
 
@@ -35,3 +37,4 @@ class Invention(Base):
     outside_option_value: Mapped[float | None] = mapped_column(Float)
     confidential_sections: Mapped[list | None] = mapped_column(JSONB)
     max_disclosure_fraction: Mapped[float | None] = mapped_column(Float, default=1.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

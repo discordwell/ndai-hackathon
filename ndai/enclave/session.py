@@ -130,7 +130,7 @@ class NegotiationSession:
 
         # Phase 1: Seller disclosure → omega_hat (1 API call)
         logger.info("Phase 1: Seller agent deciding disclosure")
-        self._emit_progress("seller_disclosure", {})
+        self._emit_progress("seller_disclosure", {"message": "Seller agent analyzing invention value and deciding disclosure level..."})
         disclosure_msg = self.seller_agent.decide_disclosure()
         self.transcript.messages.append(disclosure_msg)
 
@@ -139,10 +139,15 @@ class NegotiationSession:
 
         omega_hat = disclosure_msg.disclosure.disclosed_value
         logger.info(f"Seller disclosed omega_hat={omega_hat:.4f}")
+        self._emit_progress("seller_disclosure", {
+            "message": f"Seller disclosed \u03c9\u0302 = {omega_hat:.4f}",
+            "omega_hat": omega_hat,
+            "done": True,
+        })
 
         # Phase 2: Buyer evaluation → v_b (1 API call)
         logger.info("Phase 2: Buyer agent evaluating disclosure")
-        self._emit_progress("buyer_evaluation", {})
+        self._emit_progress("buyer_evaluation", {"message": "Buyer agent evaluating disclosed invention details..."})
         buyer_msg = self.buyer_agent.evaluate_disclosure(
             disclosure_msg.disclosure, round_num=1
         )
@@ -153,9 +158,18 @@ class NegotiationSession:
             return self._error_result("Buyer agent failed to produce assessed_value")
 
         logger.info(f"Buyer assessed value v_b={v_b:.4f}")
+        self._emit_progress("buyer_evaluation", {
+            "message": f"Buyer assessed value v_b = {v_b:.4f}",
+            "buyer_valuation": v_b,
+            "done": True,
+        })
 
         # Check deal viability before entering negotiation
         if not check_deal_viability(v_b, alpha_0, omega_hat):
+            self._emit_progress("nash_resolution", {
+                "message": f"No surplus: v_b ({v_b:.4f}) < \u03b1\u2080\u00b7\u03c9\u0302 ({alpha_0 * omega_hat:.4f})",
+                "viable": False,
+            })
             return self._no_deal_result(
                 omega_hat, v_b,
                 f"No surplus: buyer valuation {v_b:.4f} "
@@ -166,10 +180,15 @@ class NegotiationSession:
         rounds_completed = 1
         candidate_price = None
 
+        self._emit_progress("nash_resolution", {
+            "message": f"Deal viable \u2014 surplus exists (v_b={v_b:.4f} \u2265 \u03b1\u2080\u00b7\u03c9\u0302={alpha_0 * omega_hat:.4f})",
+            "viable": True,
+        })
+
         if self.config.max_rounds > 1:
-            self._emit_progress("nash_resolution", {})
+            self._emit_progress("nash_resolution", {"message": f"Entering multi-round negotiation (up to {self.config.max_rounds} rounds)..."})
             for round_num in range(2, self.config.max_rounds + 1):
-                self._emit_progress("round", {"number": round_num, "phase": "buyer_offer"})
+                self._emit_progress("round", {"number": round_num, "phase": "buyer_offer", "message": f"Round {round_num}: Buyer formulating offer..."})
                 logger.info(f"Round {round_num}: Buyer making offer")
 
                 # Buyer makes offer
@@ -189,9 +208,10 @@ class NegotiationSession:
 
                 offered_price = buyer_offer.price_proposal.proposed_price
                 logger.info(f"Round {round_num}: Buyer offers {offered_price:.4f}")
+                self._emit_progress("round", {"number": round_num, "phase": "buyer_offer", "offer": offered_price, "message": f"Round {round_num}: Buyer offers {offered_price:.4f}", "done": True})
 
                 # Seller evaluates offer
-                self._emit_progress("round", {"number": round_num, "phase": "seller_response"})
+                self._emit_progress("round", {"number": round_num, "phase": "seller_response", "message": f"Round {round_num}: Seller evaluating offer..."})
                 seller_response = self.seller_agent.evaluate_offer(
                     offered_price,
                     buyer_offer.explanation or "",
@@ -205,7 +225,7 @@ class NegotiationSession:
                 else:
                     action = "accept"
 
-                self._emit_progress("round", {"number": round_num, "phase": "seller_response", "action": action})
+                self._emit_progress("round", {"number": round_num, "phase": "seller_response", "action": action, "message": f"Round {round_num}: Seller {action}s the offer", "done": True})
                 logger.info(f"Round {round_num}: Seller action={action}")
 
                 if action == "accept":
@@ -220,7 +240,7 @@ class NegotiationSession:
                 rounds_completed = round_num
 
         # Phase 4: Final resolution
-        self._emit_progress("nash_resolution", {})
+        self._emit_progress("nash_resolution", {"message": "Computing bilateral Nash equilibrium price..."})
 
         # If multi-round produced an accepted price, use it
         if candidate_price is not None:

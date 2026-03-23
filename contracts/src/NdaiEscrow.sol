@@ -3,6 +3,12 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+/// @title NdaiEscrow — Per-deal escrow for NDAI bilateral Nash bargaining
+/// @author NDAI (arxiv:2502.07924)
+/// @notice Holds buyer funds during TEE-mediated negotiation. The operator (TEE enclave)
+///   submits the equilibrium price; the seller accepts or rejects; funds settle accordingly.
+/// @dev State machine: Created → Funded → Evaluated → Accepted | Rejected | Expired.
+///   The escrow is created in the Funded state (constructor requires msg.value > 0).
 contract NdaiEscrow is ReentrancyGuard {
     enum State { Created, Funded, Evaluated, Accepted, Rejected, Expired }
 
@@ -26,6 +32,12 @@ contract NdaiEscrow is ReentrancyGuard {
     modifier onlySeller() { require(msg.sender == seller, "Only seller"); _; }
     modifier inState(State s) { require(state == s, "Wrong state"); _; }
 
+    /// @notice Deploy a new escrow. Buyer sends ETH as the budget cap.
+    /// @param _buyer Address of the buyer (investor)
+    /// @param _seller Address of the seller (inventor)
+    /// @param _operator Address of the TEE operator that submits the negotiation outcome
+    /// @param _reservePrice Minimum price the seller will accept (in wei)
+    /// @param _deadline Unix timestamp after which the deal expires and buyer is refunded
     constructor(
         address _buyer,
         address _seller,
@@ -49,6 +61,9 @@ contract NdaiEscrow is ReentrancyGuard {
         state = State.Funded;
     }
 
+    /// @notice Operator submits the bilateral Nash equilibrium price from the TEE negotiation.
+    /// @param _finalPrice The agreed-upon price (in wei), must be within [reservePrice, budgetCap]
+    /// @param _attestationHash Hash of the enclave attestation document for on-chain verification
     function submitOutcome(uint256 _finalPrice, bytes32 _attestationHash)
         external onlyOperator inState(State.Funded)
     {
@@ -60,6 +75,7 @@ contract NdaiEscrow is ReentrancyGuard {
         emit OutcomeSubmitted(_finalPrice, _attestationHash);
     }
 
+    /// @notice Seller accepts the deal. Seller receives finalPrice, buyer receives remainder.
     function acceptDeal() external onlySeller inState(State.Evaluated) nonReentrant {
         state = State.Accepted;
         uint256 sellerPayout = finalPrice;
@@ -73,6 +89,7 @@ contract NdaiEscrow is ReentrancyGuard {
         }
     }
 
+    /// @notice Seller rejects the deal. Full balance refunded to buyer.
     function rejectDeal() external onlySeller inState(State.Evaluated) nonReentrant {
         state = State.Rejected;
         uint256 refund = address(this).balance;
@@ -81,6 +98,7 @@ contract NdaiEscrow is ReentrancyGuard {
         require(ok, "Refund failed");
     }
 
+    /// @notice Anyone can trigger expiration after the deadline. Full balance refunded to buyer.
     function claimExpired() external nonReentrant {
         require(block.timestamp > deadline, "Not expired");
         require(state == State.Funded || state == State.Evaluated, "Wrong state");
@@ -91,6 +109,11 @@ contract NdaiEscrow is ReentrancyGuard {
         require(ok, "Refund failed");
     }
 
+    /// @notice Verify attestation by comparing stored hash against computed hash.
+    /// @param pcr0 PCR0 value from the enclave image
+    /// @param nonce Freshness nonce used during attestation
+    /// @param outcome Hash of the negotiation outcome
+    /// @return True if the attestation matches
     function verifyAttestation(bytes32 pcr0, bytes32 nonce, bytes32 outcome)
         external view returns (bool)
     {

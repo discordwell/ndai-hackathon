@@ -1,4 +1,4 @@
-import { get, post } from "./client";
+import { get, post, put, del } from "./client";
 import type {
   InventionCreateRequest,
   InventionResponse,
@@ -17,6 +17,17 @@ export function listInventions(): Promise<InventionResponse[]> {
 
 export function getInvention(id: string): Promise<InventionResponse> {
   return get<InventionResponse>(`/inventions/${id}`);
+}
+
+export function updateInvention(
+  id: string,
+  data: Partial<InventionCreateRequest>
+): Promise<InventionResponse> {
+  return put<InventionResponse>(`/inventions/${id}`, data);
+}
+
+export function deleteInvention(id: string): Promise<{ status: string }> {
+  return del<{ status: string }>(`/inventions/${id}`);
 }
 
 export function listPublicListings(): Promise<ListingResponse[]> {

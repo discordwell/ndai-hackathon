@@ -1,18 +1,33 @@
 import React from "react";
 import { Card } from "../../components/shared/Card";
 import { EmptyState } from "../../components/shared/EmptyState";
-import { LoadingSpinner } from "../../components/shared/LoadingSpinner";
+import { ListSkeleton } from "../../components/shared/Skeleton";
 import { StatusBadge } from "../../components/shared/StatusBadge";
 import { useAgreements } from "../../hooks/useAgreements";
 
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
 export function BuyerAgreementListPage() {
   const { agreements, loading, error } = useAgreements();
+
+  const sorted = [...agreements].sort(
+    (a, b) => (b.created_at || "").localeCompare(a.created_at || "")
+  );
 
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">My Agreements</h1>
       {loading ? (
-        <LoadingSpinner />
+        <ListSkeleton />
       ) : error ? (
         <div className="text-red-600">{error}</div>
       ) : agreements.length === 0 ? (
@@ -29,20 +44,25 @@ export function BuyerAgreementListPage() {
           }
         />
       ) : (
-        <div className="space-y-4">
-          {agreements.map((a) => (
+        <div className="space-y-3">
+          {sorted.map((a) => (
             <Card
               key={a.id}
               onClick={() => (window.location.hash = `#/buyer/agreements/${a.id}`)}
+              className="hover:border-ndai-200 transition-colors cursor-pointer"
             >
               <div className="flex items-center justify-between">
                 <div>
                   <div className="font-medium text-gray-900">
-                    Agreement {a.id.slice(0, 8)}...
+                    {a.invention_title || `Agreement ${a.id.slice(0, 8)}...`}
                   </div>
-                  <div className="text-sm text-gray-500 mt-1">
-                    Budget cap: {a.budget_cap?.toFixed(2) ?? "—"} | Theta:{" "}
-                    {a.theta?.toFixed(3) ?? "—"}
+                  <div className="flex items-center gap-3 mt-1">
+                    <span className="text-sm text-gray-500">
+                      Budget: {a.budget_cap?.toFixed(2) ?? "—"}
+                    </span>
+                    {a.created_at && (
+                      <span className="text-xs text-gray-400">{timeAgo(a.created_at)}</span>
+                    )}
                   </div>
                 </div>
                 <StatusBadge status={a.status} />

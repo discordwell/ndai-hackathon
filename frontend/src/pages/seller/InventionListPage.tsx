@@ -1,7 +1,7 @@
 import React from "react";
 import { InventionCard } from "../../components/seller/InventionCard";
 import { EmptyState } from "../../components/shared/EmptyState";
-import { LoadingSpinner } from "../../components/shared/LoadingSpinner";
+import { ListSkeleton } from "../../components/shared/Skeleton";
 import { useInventions } from "../../hooks/useInventions";
 
 export function InventionListPage() {
@@ -19,7 +19,7 @@ export function InventionListPage() {
         </a>
       </div>
       {loading ? (
-        <LoadingSpinner />
+        <ListSkeleton />
       ) : error ? (
         <div className="text-red-600">{error}</div>
       ) : inventions.length === 0 ? (
