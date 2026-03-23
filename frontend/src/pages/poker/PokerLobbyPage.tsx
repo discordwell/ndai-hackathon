@@ -58,12 +58,27 @@ export function PokerLobbyPage() {
           <h1 className="text-2xl font-bold text-gray-900">Poker Tables</h1>
           <p className="text-sm text-gray-500 mt-0.5">Provably fair Texas Hold'em via Trusted Execution Environment</p>
         </div>
-        <button
-          onClick={() => setShowCreate(!showCreate)}
-          className="bg-ndai-600 hover:bg-ndai-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold shadow-lg shadow-ndai-600/20 transition-all active:scale-95"
-        >
-          + New Table
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              const openTable = tables.find(t => t.player_count < t.max_seats);
+              if (openTable) {
+                window.location.hash = `#/poker/table/${openTable.id}`;
+              } else {
+                setError("No open tables available");
+              }
+            }}
+            className="bg-white border border-gray-200 hover:border-ndai-300 hover:shadow-sm text-gray-700 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95"
+          >
+            Quick Join
+          </button>
+          <button
+            onClick={() => setShowCreate(!showCreate)}
+            className="bg-ndai-600 hover:bg-ndai-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold shadow-lg shadow-ndai-600/20 transition-all active:scale-95"
+          >
+            + New Table
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -158,6 +173,14 @@ export function PokerLobbyPage() {
                       {t.player_count}/{t.max_seats} seated
                     </span>
                   </div>
+
+                  {/* Seated badge */}
+                  {t.my_seat != null && (
+                    <span className="text-xs px-3 py-1 rounded-full font-medium bg-ndai-50 text-ndai-700 border border-ndai-200 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-ndai-500" />
+                      Seated
+                    </span>
+                  )}
 
                   {/* Status */}
                   <span className={`text-xs px-3 py-1 rounded-full font-medium ${

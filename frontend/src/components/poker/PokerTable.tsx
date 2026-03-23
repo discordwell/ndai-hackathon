@@ -8,6 +8,7 @@ interface Props {
   tableView: TableView | null;
   myPlayerId: string | null;
   onAction: (action: string, amount?: number) => void;
+  lastActions?: Record<number, { action: string; amount: number }>;
 }
 
 function getSeatPositions(
@@ -29,7 +30,7 @@ function getSeatPositions(
   return positions;
 }
 
-export function PokerTable({ tableView, myPlayerId, onAction }: Props) {
+export function PokerTable({ tableView, myPlayerId, onAction, lastActions = {} }: Props) {
   if (!tableView) {
     return (
       <div className="w-full h-full bg-gray-950 flex items-center justify-center">
@@ -104,10 +105,13 @@ export function PokerTable({ tableView, myPlayerId, onAction }: Props) {
           <div className="absolute inset-3 rounded-[50%] border border-white/[0.04]" />
         </div>
 
-        {/* Phase indicator */}
+        {/* Phase indicator with crossfade */}
         {tableView.phase && tableView.phase !== "waiting" && (
           <div className="absolute top-[15%] left-1/2 -translate-x-1/2 z-10">
-            <span className="text-white/20 text-[10px] uppercase tracking-[0.2em] font-medium">
+            <span
+              key={tableView.phase}
+              className="text-white/20 text-[10px] uppercase tracking-[0.2em] font-medium animate-[fadeIn_0.5s_ease-out]"
+            >
               {phaseLabel[tableView.phase] ?? tableView.phase}
               {tableView.hand_number ? ` \u00B7 Hand #${tableView.hand_number}` : ""}
             </span>
@@ -138,6 +142,7 @@ export function PokerTable({ tableView, myPlayerId, onAction }: Props) {
                 isSmallBlind={tableView.small_blind_seat === i}
                 isBigBlind={tableView.big_blind_seat === i}
                 isActionOn={tableView.action_on === i}
+                lastAction={lastActions[i]}
               />
             </div>
           );

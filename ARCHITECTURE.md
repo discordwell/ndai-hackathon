@@ -272,7 +272,7 @@ Browser ↔ SSE (per-player filtered) + REST → FastAPI → Enclave (poker engi
 
 ### API (`ndai/api/routers/poker.py`)
 
-9 endpoints at `/api/v1/poker`. SSE streaming broadcasts game events with per-player card filtering (each subscriber only sees their own hole cards). PokerOrchestrator manages long-lived tables and action timeouts.
+12 endpoints at `/api/v1/poker`. SSE streaming broadcasts game events with per-player card filtering (each subscriber only sees their own hole cards). PokerOrchestrator manages long-lived tables and action timeouts. Hand history persists all actions (PokerHandAction), community cards, pots awarded, and verification data for post-game replay. Rebuy and table close endpoints support full table lifecycle.
 
 ### Security
 

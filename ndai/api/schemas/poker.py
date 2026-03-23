@@ -42,6 +42,36 @@ class TableSummaryResponse(BaseModel):
     player_count: int
     status: str
     escrow_contract: str | None = None
+    my_seat: int | None = None
+
+
+class HandActionResponse(BaseModel):
+    seat_index: int
+    player_id: str
+    phase: str
+    action: str
+    amount: int
+    sequence: int
+
+
+class HandSummaryResponse(BaseModel):
+    hand_number: int
+    table_id: str
+    dealer_seat: int
+    community_cards: list[dict[str, Any]] | None = None
+    pots_awarded: list[dict[str, Any]] | None = None
+    result_hash: str | None = None
+    deck_seed_hash: str | None = None
+    settlement_tx_hash: str | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
+    small_blind: int | None = None
+    big_blind: int | None = None
+
+
+class HandDetailResponse(HandSummaryResponse):
+    actions: list[HandActionResponse] = []
+    verification: dict[str, Any] | None = None
 
 
 class TableViewResponse(BaseModel):

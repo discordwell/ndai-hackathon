@@ -5,6 +5,7 @@ Follows the same patterns as escrow_client.py.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -171,6 +172,3 @@ class PokerBlockchainClient:
     ) -> bool:
         contract = self._table_contract(table_address)
         return await contract.functions.verifyHandResult(hand_number, expected_hash).call()
-
-
-import asyncio  # noqa: E402 — used by get_table_state gather

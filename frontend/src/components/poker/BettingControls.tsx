@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 interface Props {
   callAmount: number;
@@ -35,6 +35,51 @@ export default function BettingControls({
 
   const potSize = callAmount > 0 ? callAmount * 2 : minRaise;
 
+  // Keyboard shortcuts
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (disabled) return;
+    // Don't capture when typing in an input
+    if ((e.target as HTMLElement).tagName === "INPUT") return;
+
+    switch (e.key.toLowerCase()) {
+      case "f":
+        e.preventDefault();
+        onAction("fold");
+        break;
+      case "c":
+        e.preventDefault();
+        onAction(canCheck ? "check" : "call");
+        break;
+      case "r":
+        if (minRaise < maxRaise) {
+          e.preventDefault();
+          onAction("raise", raiseAmount);
+        }
+        break;
+      case "a":
+        e.preventDefault();
+        onAction("all_in");
+        break;
+      case "arrowup":
+        if (minRaise < maxRaise) {
+          e.preventDefault();
+          handleRaiseChange(raiseAmount + minRaise);
+        }
+        break;
+      case "arrowdown":
+        if (minRaise < maxRaise) {
+          e.preventDefault();
+          handleRaiseChange(raiseAmount - minRaise);
+        }
+        break;
+    }
+  }, [disabled, canCheck, raiseAmount, minRaise, maxRaise, onAction, handleRaiseChange]);
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
+
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50">
       {/* Gradient fade */}
@@ -48,7 +93,7 @@ export default function BettingControls({
             onClick={() => onAction("fold")}
             className="px-5 py-2.5 rounded-xl bg-gradient-to-b from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold text-sm shadow-lg shadow-red-900/30 disabled:opacity-30 transition-all active:scale-95 border border-red-500/30"
           >
-            Fold
+            Fold <kbd className="ml-1 text-[9px] opacity-50 font-normal">F</kbd>
           </button>
 
           {/* Check or Call */}
@@ -58,7 +103,7 @@ export default function BettingControls({
               onClick={() => onAction("check")}
               className="px-5 py-2.5 rounded-xl bg-gradient-to-b from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white font-bold text-sm shadow-lg disabled:opacity-30 transition-all active:scale-95 border border-gray-500/30"
             >
-              Check
+              Check <kbd className="ml-1 text-[9px] opacity-50 font-normal">C</kbd>
             </button>
           ) : (
             <button
@@ -66,7 +111,7 @@ export default function BettingControls({
               onClick={() => onAction("call")}
               className="px-5 py-2.5 rounded-xl bg-gradient-to-b from-ndai-600 to-ndai-700 hover:from-ndai-500 hover:to-ndai-600 text-white font-bold text-sm shadow-lg shadow-ndai-900/30 disabled:opacity-30 transition-all active:scale-95 border border-ndai-500/30"
             >
-              Call {formatChips(callAmount)}
+              Call {formatChips(callAmount)} <kbd className="ml-1 text-[9px] opacity-50 font-normal">C</kbd>
             </button>
           )}
 
@@ -122,7 +167,7 @@ export default function BettingControls({
                   onClick={() => onAction("raise", raiseAmount)}
                   className="px-5 py-2.5 rounded-xl bg-gradient-to-b from-gold-500 to-gold-600 hover:from-gold-400 hover:to-gold-500 text-gray-900 font-bold text-sm shadow-lg shadow-gold-900/20 disabled:opacity-30 transition-all active:scale-95 border border-gold-400/30"
                 >
-                  Raise
+                  Raise <kbd className="ml-1 text-[9px] opacity-50 font-normal">R</kbd>
                 </button>
               </div>
             </>
@@ -135,7 +180,7 @@ export default function BettingControls({
               onClick={() => onAction("all_in")}
               className="px-5 py-2.5 rounded-xl bg-gradient-to-b from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-900/30 disabled:opacity-30 transition-all active:scale-95 border border-emerald-400/30"
             >
-              All In
+              All In <kbd className="ml-1 text-[9px] opacity-50 font-normal">A</kbd>
             </button>
           </div>
         </div>

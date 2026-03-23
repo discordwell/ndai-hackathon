@@ -8,6 +8,7 @@ interface Props {
   isSmallBlind: boolean;
   isBigBlind: boolean;
   isActionOn?: boolean;
+  lastAction?: { action: string; amount: number };
 }
 
 function DealerChip({ label, bg }: { label: string; bg: string }) {
@@ -41,6 +42,26 @@ function avatarColor(id: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
+const ACTION_BADGE_COLORS: Record<string, string> = {
+  fold: "text-red-400",
+  check: "text-gray-400",
+  call: "text-blue-400",
+  bet: "text-gold-400",
+  raise: "text-gold-400",
+  all_in: "text-emerald-400",
+  timeout_fold: "text-red-400",
+};
+
+function formatActionLabel(action: string, amount: number): string {
+  if (action === "all_in") return "All In";
+  if (action === "timeout_fold") return "Timed out";
+  const label = action.charAt(0).toUpperCase() + action.slice(1);
+  if (amount > 0 && action !== "fold" && action !== "check") {
+    return `${label} ${formatStack(amount)}`;
+  }
+  return label;
+}
+
 export default function PlayerSeat({
   seat,
   isHero,
@@ -48,6 +69,7 @@ export default function PlayerSeat({
   isSmallBlind,
   isBigBlind,
   isActionOn = false,
+  lastAction,
 }: Props) {
   if (!seat) {
     return (
@@ -95,18 +117,26 @@ export default function PlayerSeat({
           {isBigBlind && <DealerChip label="BB" bg="bg-gradient-to-b from-orange-400 to-orange-600" />}
         </div>
 
-        {/* Hole cards */}
+        {/* Hole cards with deal animation */}
         <div className="flex -space-x-2">
           {isHero && seat.hole_cards && seat.hole_cards.length > 0 ? (
             seat.hole_cards.map((c, i) => (
-              <div key={i} className={i === 1 ? "rotate-3" : "-rotate-3"}>
+              <div
+                key={`${c.rank}-${c.suit}`}
+                className={i === 1 ? "rotate-3" : "-rotate-3"}
+                style={{ animation: `dealCard 0.4s ease-out ${i * 0.1}s backwards` }}
+              >
                 <PlayingCard card={c} size="sm" />
               </div>
             ))
           ) : seat.has_hole_cards ? (
             <>
-              <div className="-rotate-3"><PlayingCard card={null} size="sm" /></div>
-              <div className="rotate-3"><PlayingCard card={null} size="sm" /></div>
+              <div className="-rotate-3" style={{ animation: "dealCard 0.4s ease-out backwards" }}>
+                <PlayingCard card={null} size="sm" />
+              </div>
+              <div className="rotate-3" style={{ animation: "dealCard 0.4s ease-out 0.1s backwards" }}>
+                <PlayingCard card={null} size="sm" />
+              </div>
             </>
           ) : null}
         </div>
@@ -127,6 +157,15 @@ export default function PlayerSeat({
             </span>
           </div>
         </div>
+
+        {/* Last action badge */}
+        {lastAction && (
+          <div className="animate-[fadeIn_0.2s_ease-out]">
+            <span className={`text-[10px] font-bold ${ACTION_BADGE_COLORS[lastAction.action] || "text-gray-400"}`}>
+              {formatActionLabel(lastAction.action, lastAction.amount)}
+            </span>
+          </div>
+        )}
 
         {/* Action timer bar */}
         {isActionOn && (

@@ -60,7 +60,7 @@ export function usePokerStream(
       "hand_start", "blinds_posted", "cards_dealt", "deal_hole_cards",
       "player_action", "phase_change", "action_on", "showdown",
       "hand_end", "player_timeout", "player_joined", "player_left",
-      "settlement",
+      "player_rebuy", "table_closed", "settlement",
     ];
     for (const type of eventTypes) {
       es.addEventListener(type, (e) => {

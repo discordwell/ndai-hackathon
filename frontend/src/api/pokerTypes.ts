@@ -13,6 +13,7 @@ export interface PokerTableSummary {
   player_count: number;
   status: string;
   escrow_contract?: string;
+  my_seat?: number | null;
 }
 
 export interface SeatView {
@@ -81,4 +82,33 @@ export interface GameEvent {
 export interface HandVerification {
   verification: any;
   deck_seed_hash?: string;
+}
+
+export interface HandSummary {
+  hand_number: number;
+  table_id: string;
+  dealer_seat: number;
+  community_cards: PlayingCard[] | null;
+  pots_awarded: { player_id?: string; amount: number; hand_rank?: string; seat?: number }[] | null;
+  result_hash: string | null;
+  deck_seed_hash: string | null;
+  settlement_tx_hash: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  small_blind: number | null;
+  big_blind: number | null;
+}
+
+export interface HandAction {
+  seat_index: number;
+  player_id: string;
+  phase: string;
+  action: string;
+  amount: number;
+  sequence: number;
+}
+
+export interface HandDetail extends HandSummary {
+  actions: HandAction[];
+  verification: any;
 }

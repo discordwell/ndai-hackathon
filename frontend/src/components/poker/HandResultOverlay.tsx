@@ -14,8 +14,11 @@ export default function HandResultOverlay({ result, onDismiss }: Props) {
 
   if (!result) return null;
 
-  const winner = result.winner ?? result.player_id ?? "Unknown";
-  const displayWinner = winner.length > 10 ? winner.slice(0, 8) + "\u2026" : winner;
+  const displayWinner = result.displayName ?? (
+    (result.winner ?? result.player_id ?? "Unknown").length > 10
+      ? (result.winner ?? result.player_id ?? "Unknown").slice(0, 8) + "\u2026"
+      : (result.winner ?? result.player_id ?? "Unknown")
+  );
   const handRank = result.hand_rank ?? result.hand ?? "";
   const amount = result.amount ?? result.pot ?? 0;
 
