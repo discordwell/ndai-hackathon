@@ -582,10 +582,17 @@ async def _run_simulated_verification(proposal_id, proposal, target, claimed_cap
     if proposal.sealed_poc and not proposal.poc_script:
         from ndai.api.routers.enclave import _get_sim_state
         from ndai.enclave.ephemeral_keys import ecies_decrypt
+        from dataclasses import replace as _dc_replace
+        from ndai.enclave.vuln_verify.models import PoCSpec
         sim_keypair, _ = _get_sim_state()
         poc_plaintext = ecies_decrypt(sim_keypair.private_key, proposal.sealed_poc)
-        # Override the placeholder PoC content in the target spec
-        target_spec.poc.script_content = poc_plaintext.decode("utf-8")
+        # Replace the frozen PoCSpec with decrypted content
+        target_spec = _dc_replace(target_spec, poc=PoCSpec(
+            script_type=target_spec.poc.script_type,
+            script_content=poc_plaintext.decode("utf-8"),
+            timeout_sec=target_spec.poc.timeout_sec,
+            run_as_user=target_spec.poc.run_as_user,
+        ))
         logger.info("Decrypted sealed PoC (%d bytes) for proposal %s", len(poc_plaintext), proposal_id)
 
     await _emit_progress(proposal_id, "build_done", {"message": "Target specification ready."})
