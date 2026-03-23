@@ -204,8 +204,10 @@ async def _handle_timeout_callback(table_id: str, result: dict) -> None:
             view = result.get("table_view", {})
             phase = view.get("phase", "preflop")
             hand_number = view.get("hand_number", 0)
-            seat_data = view.get("seats", [None] * 9)
-            pid = seat_data[seat_idx]["player_id"] if seat_idx is not None and seat_data[seat_idx] else "unknown"
+            seat_data = view.get("seats", [])
+            pid = "unknown"
+            if seat_idx is not None and 0 <= seat_idx < len(seat_data) and seat_data[seat_idx]:
+                pid = seat_data[seat_idx].get("player_id", "unknown")
             if hand_number and pid != "unknown":
                 await _persist_action(table_id, hand_number, seat_idx, pid, phase, "timeout_fold", 0)
 
@@ -734,7 +736,11 @@ async def start_hand_endpoint(
     view = result.get("table_view", {})
     if not any(s and s.get("player_id") == user_id for s in view.get("seats", [])):
         raise HTTPException(status_code=403, detail="Must be seated to start a hand")
-    await _do_start_hand(table_id)
+    lock = _get_table_lock(table_id)
+    if lock.locked():
+        return {"status": "ok"}  # Another start is already in progress
+    async with lock:
+        await _do_start_hand(table_id)
     return {"status": "ok"}
 
 
@@ -924,20 +930,18 @@ async def rebuy(
             detail=f"Rebuy would exceed max buy-in ({max_buy_in}). Current stack: {player_seat['stack']}",
         )
 
-    # Update the enclave state
-    # We reuse the join action internally — the enclave handles stack updates
-    # For now, directly update the in-process table state
-    from ndai.enclave.poker.state import TableState
-    poker_tables = orchestrator._poker_tables
-    table = poker_tables.get(table_id)
-    if not table:
-        raise HTTPException(status_code=404, detail="Table not found in enclave")
+    # Update enclave state via proper action
+    rebuy_result = await orchestrator.send_action({
+        "action": "poker_rebuy",
+        "table_id": table_id,
+        "player_id": user_id,
+        "amount": body.amount,
+    })
 
-    seat = table.player_by_id(user_id)
-    if not seat:
-        raise HTTPException(status_code=400, detail="Player not found in enclave")
+    if rebuy_result.get("status") != "ok":
+        raise HTTPException(status_code=400, detail=rebuy_result.get("error", "Rebuy failed"))
 
-    seat.stack += body.amount
+    new_stack = rebuy_result["new_stack"]
 
     # Update DB
     seat_result = await db.execute(
@@ -949,7 +953,7 @@ async def rebuy(
     )
     db_seat = seat_result.scalar_one_or_none()
     if db_seat:
-        db_seat.current_stack = seat.stack
+        db_seat.current_stack = new_stack
         db_seat.buy_in += body.amount
         await db.commit()
 
@@ -957,10 +961,10 @@ async def rebuy(
     await _emit_poker_event(table_id, "player_rebuy", {
         "player_id": user_id,
         "amount": body.amount,
-        "new_stack": seat.stack,
+        "new_stack": new_stack,
     })
 
-    return {"status": "ok", "new_stack": seat.stack}
+    return {"status": "ok", "new_stack": new_stack}
 
 
 @router.post("/tables/{table_id}/close")
@@ -995,7 +999,15 @@ async def close_table(
     # Cancel all timeouts
     orchestrator.cancel_all_timeouts(table_id)
 
-    # Mark all active seats as left
+    # Get remaining stacks from enclave before we destroy state
+    enclave_table = orchestrator._poker_tables.get(table_id)
+    stack_map: dict[str, int] = {}
+    if enclave_table:
+        for s in enclave_table.seats:
+            if s is not None:
+                stack_map[s.player_id] = s.stack
+
+    # Mark all active seats as left with cashout amounts
     seat_result = await db.execute(
         select(PokerSeat).where(
             PokerSeat.table_id == uuid.UUID(table_id),
@@ -1004,12 +1016,17 @@ async def close_table(
     )
     for seat in seat_result.scalars().all():
         seat.status = "left"
+        seat.cashout_amount = stack_map.get(str(seat.player_id), 0)
+        seat.current_stack = 0
         seat.left_at = datetime.now(timezone.utc)
 
     # Close table in DB
     poker_table.status = "closed"
     poker_table.closed_at = datetime.now(timezone.utc)
     await db.commit()
+
+    # Broadcast close event BEFORE cleaning up queues
+    await _emit_poker_event(table_id, "table_closed", {"table_id": table_id})
 
     # Remove from enclave state
     if table_id in orchestrator._poker_tables:
@@ -1018,8 +1035,5 @@ async def close_table(
     # Clean up SSE queues and locks
     _table_queues.pop(table_id, None)
     _table_locks.pop(table_id, None)
-
-    # Broadcast close event
-    await _emit_poker_event(table_id, "table_closed", {"table_id": table_id})
 
     return {"status": "ok"}

@@ -38,6 +38,7 @@ def handle_poker_action(
         "poker_action": _handle_player_action,
         "poker_timeout": _handle_timeout,
         "poker_get_table": _handle_get_table,
+        "poker_rebuy": _handle_rebuy,
     }
 
     handler = handlers.get(action)
@@ -342,6 +343,41 @@ def _handle_get_table(
         "status": "ok",
         "table_view": make_table_view(table, player_id),
     }
+
+
+def _handle_rebuy(
+    request: dict[str, Any],
+    poker_tables: dict[str, TableState],
+) -> dict[str, Any]:
+    table = _get_table(request, poker_tables)
+    if isinstance(table, dict):
+        return table
+
+    player_id = request.get("player_id")
+    amount = int(request.get("amount", 0))
+
+    if not player_id:
+        return {"status": "error", "error": "Missing player_id"}
+    if amount <= 0:
+        return {"status": "error", "error": "Rebuy amount must be positive"}
+
+    seat = table.player_by_id(player_id)
+    if seat is None:
+        return {"status": "error", "error": "Player not at table"}
+
+    # Only allow rebuy between hands
+    if table.hand is not None and not table.hand.hand_over:
+        return {"status": "error", "error": "Cannot rebuy during an active hand"}
+
+    new_stack = seat.stack + amount
+    if new_stack > table.max_buy_in:
+        return {"status": "error", "error": f"Rebuy would exceed max buy-in ({table.max_buy_in})"}
+
+    seat.stack = new_stack
+    logger.info("Player %s rebuy %d at table %s (new stack: %d)",
+                player_id, amount, table.table_id, new_stack)
+
+    return {"status": "ok", "new_stack": new_stack}
 
 
 def _get_table(

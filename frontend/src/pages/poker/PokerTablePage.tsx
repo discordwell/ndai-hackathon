@@ -11,7 +11,12 @@ import type { TableView } from "../../api/pokerTypes";
 
 export function PokerTablePage({ tableId }: { tableId: string }) {
   const { token } = useAuth();
-  const userId = token ? JSON.parse(atob(token.split(".")[1])).sub : null;
+  let userId: string | null = null;
+  try {
+    userId = token ? JSON.parse(atob(token.split(".")[1])).sub : null;
+  } catch {
+    // Malformed token — will be null
+  }
   const { tableView: streamView, lastEvent, isConnected, error: streamError, connect, disconnect } = usePokerStream(tableId, token);
   const [tableView, setTableView] = useState<TableView | null>(null);
   const [showBuyIn, setShowBuyIn] = useState(false);
