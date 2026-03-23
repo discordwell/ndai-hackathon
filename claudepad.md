@@ -246,6 +246,12 @@ Root cause: `execvpe: python: No such file or directory` — amazonlinux:2023 ha
 - PCR0 (v1.0.1): `524244ce6b8defa452bbca548bd6434720f77e4a16f00d27f441e04e2c48662a0d9c22e5f0aee96eee0a036a83fab70e`
 - Note: COSE Sign1 signature verification has a bug in `ndai/tee/attestation.py` — the cert chain validation fails but the data (PCR0, public key, nonce) is correct. Needs debugging.
 
+### Phase 1b: Per-Target EIF (Apache httpd) — DONE
+Built `targets/apache-httpd/Dockerfile` (amazonlinux:2023 + httpd + NDAI runtime). EIF builds deterministically. PCR0 published on-chain with build spec hash + Dockerfile URI. Enclave runs on CID 32, responds to vsock, returns real Nitro attestation.
+- Apache PCR0: `97663b18b6a7048d0a9074e45ec1675a3b43f9d0480902ed40e0535b358ded02199ed9449d413f7dd6cb212fa6f9b2f7`
+- PCR0Registry v2: `0x472c8e2239A5AFe29BB828479c5F4bCf4de119F4` (Sepolia) — now with build spec tracking, history, verifyPCR0()
+- Key lessons: Ubuntu base doesn't work in Nitro (init compat), must use amazonlinux:2023; pip --prefix not --target; Python version must match between builder and runtime
+
 ### Phase 2: Real Nitro Attestation E2E
 Once enclave boots:
 - `GET /enclave/attestation` returns AWS-hardware-signed COSE Sign1
