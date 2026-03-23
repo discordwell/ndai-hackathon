@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     enclave_vsock_port: int = 5000
     enclave_cid: int = 16  # Enclave CID (assigned at launch, check nitro-cli describe-enclaves)
 
+    # Secret encryption (AES-256-GCM) — 32-byte hex key
+    secret_encryption_key: str = ""
+
     # Security parameters (paper defaults)
     shamir_k: int = 3
     shamir_n: int = 5

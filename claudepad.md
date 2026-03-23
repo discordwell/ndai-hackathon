@@ -2,6 +2,18 @@
 
 ## Session Summaries
 
+### 2026-03-22T~23:00Z — Recall System Polish (Production + Presentation Ready)
+- **Security**: AES-256-GCM encryption for secrets at rest (new `ndai/crypto/secret_encryption.py`, falls back to base64 if no key). Fixed race condition in `try_claim_use` — single atomic UPDATE with CASE for depletion. Added rollback on TEE session crash (`restore_use` with revocation guard). Sanitized exception messages in audit log.
+- **New API**: `POST /secrets/{id}/revoke` endpoint (owner-only). Access log now returns `verification_data` and `requester_display_name` (via LEFT JOIN).
+- **Frontend — SecretUsePage**: Animated multi-step TEE progress stepper (6 pipeline stages). Clickable action chips from policy. Inline confirmation before consuming a use.
+- **Frontend — SecretListPage**: Hero section with 3 feature cards (Policy-Gated, TEE-Isolated, Cryptographically Verified). Revoke button with confirmation. Visual distinction for depleted/revoked secrets (opacity, colored borders). Relative creation time.
+- **Frontend — SecretCreatePage**: Tag-chip input for allowed actions (replaces comma-separated text). Helper text explaining encryption, policy, and depletion.
+- **Frontend — AccessLogPage**: Card-based layout (replaces table). Expandable rows with PolicyDisplay, VerificationPanel, EgressLogDisplay. Shows requester display name. Mobile responsive by default.
+- **Shared components**: `defaultExpanded` prop on PolicyDisplay, VerificationPanel, EgressLogDisplay (default=true).
+- **Tests**: Fixed broken `test_use_secret_valid_action` (was accepting 500s). Added: owner self-use prevention (403), depleted secret (400), revocation, restore_use revocation guard. New unit tests for encryption (5 tests) and proxy session (2 new).
+- **Code review fixes**: `restore_use` won't un-revoke a secret. Inner JOIN → outerjoin for deleted users. Removed unused `isPending` variable.
+- Files: 2 new (encryption module, encryption tests), ~15 modified. All 27 unit tests pass.
+
 ### 2026-03-22T~21:30Z — Poker System Polish (Production + Presentation Ready)
 - **Backend data foundation**: Fixed PokerHand field population at hand completion (community_cards, pots_awarded, result_hash, deck_seed_hash now persisted). Added PokerHandAction persistence (was model without writes). Added `GET /tables/{table_id}/hands` paginated list endpoint with cursor. Fixed N+1 query in list_tables (subquery join). Fixed import order in poker_client.py.
 - **Hand History page**: Full rewrite of 10-line stub → ~300-line page with table filter dropdown, paginated hand cards showing community cards (PlayingCard sm), pot amounts, winner/hand rank, settlement tx links (basescan.org), TEE verification badges. Click-to-expand shows action replay, pot breakdown, deck seed hash, result hash, full VerificationPanel.

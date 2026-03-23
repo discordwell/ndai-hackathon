@@ -1,7 +1,6 @@
 """Conditional Recall API — credential proxy via TEE."""
 
 import asyncio
-import base64
 import logging
 import uuid
 
@@ -17,6 +16,7 @@ from ndai.api.schemas.secrets import (
     SecretUseResponse,
 )
 from ndai.config import settings
+from ndai.crypto.secret_encryption import decrypt_secret, encrypt_secret
 from ndai.db.repositories_secrets import (
     create_access_log,
     create_secret,
@@ -24,6 +24,8 @@ from ndai.db.repositories_secrets import (
     list_access_logs,
     list_available_secrets,
     list_secrets_by_owner,
+    restore_use,
+    revoke_secret,
     try_claim_use,
 )
 from ndai.db.session import get_db
@@ -40,7 +42,11 @@ async def create_secret_endpoint(
     user_id: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    encoded = base64.b64encode(req.secret_value.encode()).decode()
+    if settings.secret_encryption_key:
+        encoded = encrypt_secret(req.secret_value, settings.secret_encryption_key)
+    else:
+        import base64
+        encoded = base64.b64encode(req.secret_value.encode()).decode()
     secret = await create_secret(
         db,
         owner_id=uuid.UUID(user_id),
@@ -128,7 +134,11 @@ async def use_secret(
     if not claimed:
         raise HTTPException(409, "Secret use could not be claimed (concurrent request or depleted)")
 
-    secret_value = base64.b64decode(secret.encrypted_value).decode()
+    if settings.secret_encryption_key:
+        secret_value = decrypt_secret(secret.encrypted_value, settings.secret_encryption_key)
+    else:
+        import base64
+        secret_value = base64.b64decode(secret.encrypted_value).decode()
 
     config = SecretProxyConfig(
         secret_value=secret_value,
@@ -139,7 +149,23 @@ async def use_secret(
         llm_model=settings.openai_model if settings.llm_provider == "openai" else settings.anthropic_model,
     )
     session = SecretProxySession(config)
-    result = await asyncio.to_thread(session.run)
+
+    try:
+        result = await asyncio.to_thread(session.run)
+    except Exception as exc:
+        # TEE session crashed — restore the claimed use and log error
+        logger.error("TEE session failed for secret %s: %s", secret_id, exc)
+        await restore_use(db, uuid.UUID(secret_id))
+        await create_access_log(
+            db, uuid.UUID(secret_id), uuid.UUID(user_id),
+            req.action, "error", f"TEE session error: {type(exc).__name__}",
+        )
+        await log_event(
+            db, None, "secret_use_error",
+            actor_id=uuid.UUID(user_id),
+            metadata={"secret_id": secret_id, "action": req.action, "error": type(exc).__name__},
+        )
+        raise HTTPException(500, "TEE session failed — use was not consumed")
 
     log_status = "approved" if result.success else "denied"
     verification_store = {
@@ -172,6 +198,20 @@ async def use_secret(
     )
 
 
+@router.post("/{secret_id}/revoke", response_model=SecretResponse)
+async def revoke_secret_endpoint(
+    secret_id: str,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    secret = await revoke_secret(db, uuid.UUID(secret_id), uuid.UUID(user_id))
+    if not secret:
+        raise HTTPException(404, "Secret not found or not owned by you")
+    await log_event(db, None, "secret_revoked", actor_id=uuid.UUID(user_id),
+                    metadata={"secret_id": secret_id})
+    return _to_response(secret, is_owner=True)
+
+
 @router.get("/{secret_id}/access-log", response_model=list[SecretAccessLogResponse])
 async def get_access_log(
     secret_id: str,
@@ -183,18 +223,20 @@ async def get_access_log(
         raise HTTPException(404, "Secret not found")
     if str(secret.owner_id) != user_id:
         raise HTTPException(403, "Only the owner can view access logs")
-    logs = await list_access_logs(db, uuid.UUID(secret_id))
+    rows = await list_access_logs(db, uuid.UUID(secret_id))
     return [
         SecretAccessLogResponse(
             id=log.id,
             secret_id=str(log.secret_id),
             requester_id=str(log.requester_id),
+            requester_display_name=display_name,
             action_requested=log.action_requested,
             status=log.status,
             result_summary=log.result_summary,
+            verification_data=log.verification_data,
             created_at=log.created_at,
         )
-        for log in logs
+        for log, display_name in rows
     ]
 
 

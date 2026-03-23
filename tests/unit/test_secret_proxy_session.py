@@ -74,3 +74,52 @@ def test_secret_is_cleared_after_run():
         session.run()
 
     assert session.config.secret_value is None
+
+
+def test_denied_action_returns_verification_chain():
+    config = SecretProxyConfig(
+        secret_value="sk-test-key-12345",
+        action="delete everything",
+        policy={"allowed_actions": ["read only"], "max_uses": 5},
+        llm_provider="openai",
+        api_key="test-key",
+        llm_model="gpt-4o",
+    )
+    session = SecretProxySession(config)
+    result = session.run()
+
+    assert result.success is False
+    assert result.verification is not None
+    assert "session_id" in result.verification
+    assert "events" in result.verification
+    assert len(result.verification["events"]) > 0
+    assert result.verification["final_hash"] != "0" * 64
+    assert "attestation_claims" in result.verification
+
+
+def test_valid_action_produces_all_fields():
+    config = SecretProxyConfig(
+        secret_value="sk-test-key-12345",
+        action="list items",
+        policy={"allowed_actions": ["list items"], "max_uses": 3},
+        llm_provider="openai",
+        api_key="test-key",
+        llm_model="gpt-4o",
+    )
+    session = SecretProxySession(config)
+    mock_client = _make_mock_client('{"items": ["a", "b"]}')
+
+    with patch.object(session, "_build_client", return_value=mock_client):
+        result = session.run()
+
+    assert result.success is True
+    assert result.action_validated is True
+    assert result.secret_deleted is True
+    assert result.policy_report is not None
+    assert result.policy_report["all_passed"] is True
+    assert result.policy_constraints is not None
+    assert isinstance(result.policy_constraints, list)
+    assert result.egress_log is not None
+    assert isinstance(result.egress_log, list)
+    assert result.verification is not None
+    assert result.verification["final_hash"] != "0" * 64

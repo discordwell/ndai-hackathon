@@ -18,7 +18,7 @@ class Secret(Base):
     owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
-    encrypted_value: Mapped[str] = mapped_column(Text, nullable=False)  # base64 for hackathon
+    encrypted_value: Mapped[str] = mapped_column(Text, nullable=False)  # AES-256-GCM (hex), falls back to base64 if no key
     policy: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {allowed_actions: [], max_uses: int}
     uses_remaining: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="active")

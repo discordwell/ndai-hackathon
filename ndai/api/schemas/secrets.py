@@ -48,7 +48,9 @@ class SecretAccessLogResponse(BaseModel):
     id: int
     secret_id: str
     requester_id: str
+    requester_display_name: str | None = None
     action_requested: str
     status: str
     result_summary: str | None
+    verification_data: dict | None = None
     created_at: datetime

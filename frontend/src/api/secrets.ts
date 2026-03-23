@@ -39,9 +39,11 @@ export interface AccessLogEntry {
   id: number;
   secret_id: string;
   requester_id: string;
+  requester_display_name: string | null;
   action_requested: string;
   status: string;
   result_summary: string | null;
+  verification_data: any | null;
   created_at: string;
 }
 
@@ -50,4 +52,5 @@ export const listMySecrets = () => get<SecretResponse[]>("/secrets/");
 export const listAvailableSecrets = () => get<SecretResponse[]>("/secrets/available");
 export const getSecret = (id: string) => get<SecretResponse>(`/secrets/${id}`);
 export const useSecret = (id: string, action: string) => post<SecretUseResponse>(`/secrets/${id}/use`, { action });
+export const revokeSecret = (id: string) => post<SecretResponse>(`/secrets/${id}/revoke`, {});
 export const getAccessLog = (id: string) => get<AccessLogEntry[]>(`/secrets/${id}/access-log`);
