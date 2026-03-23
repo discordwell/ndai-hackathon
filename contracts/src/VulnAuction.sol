@@ -57,6 +57,7 @@ contract VulnAuction is ReentrancyGuard {
         require(_seller   != address(0), "Invalid seller");
         require(_operator != address(0), "Invalid operator");
         require(_platform != address(0), "Invalid platform");
+        require(!_scOnly || _scContract != address(0), "SC contract required");
         require(_reservePrice > 0,       "Reserve must be positive");
         require(_duration > 0,           "Duration must be positive");
 

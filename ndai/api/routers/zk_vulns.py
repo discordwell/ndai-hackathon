@@ -88,6 +88,7 @@ async def list_my_zk_vulns(
             asking_price_eth=v.asking_price_eth,
             patch_status=v.patch_status,
             exclusivity=v.exclusivity,
+            serious_customers_only=v.serious_customers_only,
             status=v.status,
             created_at=v.created_at,
         )

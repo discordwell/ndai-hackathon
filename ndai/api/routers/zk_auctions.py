@@ -64,6 +64,16 @@ async def create_auction(
     if vuln.status != "active":
         raise HTTPException(status_code=400, detail="Vulnerability not active")
 
+    # Prevent duplicate active auctions for the same vulnerability
+    existing = await db.execute(
+        select(ZKVulnAuction).where(
+            ZKVulnAuction.vulnerability_id == vuln.id,
+            ZKVulnAuction.status.in_(["active", "ended"]),
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Active auction already exists for this vulnerability")
+
     end_time = datetime.now(timezone.utc) + timedelta(hours=request.duration_hours)
 
     auction = ZKVulnAuction(
