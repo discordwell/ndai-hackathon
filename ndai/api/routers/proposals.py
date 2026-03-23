@@ -327,15 +327,27 @@ async def trigger_verification(
     proposal.status = "building"
     await db.commit()
 
+    # Compute commitment hash: SHA-256 of the sealed PoC (or plaintext PoC).
+    # This is the "go code" — once emitted, the PoC is frozen.
+    import hashlib as _hl
+    poc_data = proposal.sealed_poc or (proposal.poc_script or "").encode()
+    commitment_hash = _hl.sha256(poc_data if isinstance(poc_data, bytes) else poc_data.encode()).hexdigest()
+
     _verification_statuses[proposal_id] = {"status": "building"}
-    await _emit_progress(proposal_id, "building", {"message": "Preparing verification environment..."})
+    await _emit_progress(proposal_id, "building", {
+        "message": "Preparing verification environment...",
+        "commitment_hash": commitment_hash,
+        "sealed": proposal.sealed_poc is not None,
+    })
 
     # Queue async verification in background with its own DB session.
-    # The request-scoped db session will be closed when this handler returns,
-    # so the background task must create its own session.
     asyncio.create_task(_run_verification(str(proposal.id)))
 
-    return {"status": "building", "message": "Verification started"}
+    return {
+        "status": "building",
+        "message": "Verification started",
+        "commitment_hash": commitment_hash,
+    }
 
 
 @router.get("/{proposal_id}/stream")
@@ -450,7 +462,7 @@ async def _run_verification(proposal_id: str):
 
         passed = result_json.get("passed", False)
 
-        # 3. Persist to DB
+        # 3. Persist to DB + auto-create listing on pass
         async with get_db_context() as db:
             db_result = await db.execute(
                 select(VerificationProposal)
@@ -464,6 +476,45 @@ async def _run_verification(proposal_id: str):
                 prop.verification_chain_hash = chain_hash
                 prop.attestation_pcr0 = pcr0
                 prop.error_details = None if passed else "Capability not verified by oracle"
+
+                # Auto-create verified marketplace listing on pass
+                if passed:
+                    target_result = await db.execute(
+                        select(KnownTarget).where(KnownTarget.id == prop.target_id)
+                    )
+                    t = target_result.scalar_one_or_none()
+                    if t:
+                        from ndai.models.zk_vulnerability import ZKVulnerability
+                        listing = ZKVulnerability(
+                            seller_pubkey=prop.seller_pubkey,
+                            target_software=t.display_name,
+                            target_version=t.current_version,
+                            vulnerability_class=prop.claimed_capability.upper(),
+                            impact_type=prop.claimed_capability.upper(),
+                            cvss_self_assessed=7.0,  # Default for verified exploits
+                            asking_price_eth=prop.asking_price_eth,
+                            discovery_date=prop.created_at.strftime("%Y-%m-%d"),
+                            anonymized_summary=f"Verified {prop.claimed_capability.upper()} capability against {t.display_name} v{t.current_version}. "
+                                f"Reliability: {result_json.get('reliability_score', 0):.0%}. "
+                                f"Attestation PCR0: {pcr0[:16]}... Chain hash: {chain_hash[:16]}...",
+                            status="active",
+                        )
+                        db.add(listing)
+                        prop.created_vuln_id = listing.id
+                        logger.info("Auto-created verified listing %s for proposal %s", listing.id, proposal_id)
+
+                    # Award badge on first successful verification
+                    identity_result = await db.execute(
+                        select(VulnIdentity).where(VulnIdentity.public_key == prop.seller_pubkey)
+                    )
+                    identity = identity_result.scalar_one_or_none()
+                    if identity and not identity.has_badge:
+                        from datetime import datetime, timezone
+                        identity.has_badge = True
+                        identity.badge_type = "earned"
+                        identity.badge_awarded_at = datetime.now(timezone.utc)
+                        logger.info("Awarded badge to %s on first verification pass", prop.seller_pubkey[:16])
+
                 await db.commit()
 
         # 4. Emit terminal SSE events
