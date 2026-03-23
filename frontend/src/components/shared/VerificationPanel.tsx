@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { CopyButton } from "./CopyButton";
 
 interface VerificationEvent {
   event_type: string;
@@ -27,8 +28,8 @@ interface Props {
   } | null;
 }
 
-export function VerificationPanel({ verification, escrowData }: Props) {
-  const [expanded, setExpanded] = useState(false);
+export function VerificationPanel({ verification, escrowData, defaultExpanded = true }: Props & { defaultExpanded?: boolean }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
 
   if (!verification && !escrowData) return null;
 
@@ -45,17 +46,13 @@ export function VerificationPanel({ verification, escrowData }: Props) {
         <span className="text-xs text-gray-400">{expanded ? "collapse" : "expand"}</span>
       </button>
 
-      {verification && (
+      {verification && expanded && (
         <>
-          <div className="mt-3 flex items-center gap-2">
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
             <span className="text-xs text-gray-500">Session</span>
-            <code className="text-xs bg-gray-50 px-2 py-0.5 rounded font-mono text-gray-600">
-              {verification.session_id.slice(0, 12)}...
-            </code>
+            <CopyButton value={verification.session_id} truncateLength={12} />
             <span className="text-xs text-gray-500 ml-2">Final hash</span>
-            <code className="text-xs bg-gray-50 px-2 py-0.5 rounded font-mono text-gray-600">
-              {verification.final_hash.slice(0, 16)}...
-            </code>
+            <CopyButton value={verification.final_hash} truncateLength={16} />
           </div>
 
           {verification.attestation_claims.length > 0 && (
@@ -69,8 +66,7 @@ export function VerificationPanel({ verification, escrowData }: Props) {
             </div>
           )}
 
-          {expanded && (
-            <div className="mt-4 border-t border-gray-100 pt-4">
+          <div className="mt-4 border-t border-gray-100 pt-4">
               <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
                 Event Timeline
               </h4>
@@ -86,18 +82,21 @@ export function VerificationPanel({ verification, escrowData }: Props) {
                         </span>
                       </div>
                       <p className="text-gray-600 mt-0.5">{event.description}</p>
-                      <code className="text-[10px] text-gray-400 font-mono">
-                        hash: {event.data_hash.slice(0, 16)}...
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[10px] text-gray-400">hash:</span>
+                        <CopyButton value={event.data_hash} truncateLength={16} />
                         {verification.chain_hashes[i] && (
-                          <> | chain: {verification.chain_hashes[i].slice(0, 16)}...</>
+                          <>
+                            <span className="text-[10px] text-gray-400">chain:</span>
+                            <CopyButton value={verification.chain_hashes[i]} truncateLength={16} />
+                          </>
                         )}
-                      </code>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
-          )}
         </>
       )}
 

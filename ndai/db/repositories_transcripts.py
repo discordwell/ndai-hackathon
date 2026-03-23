@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ndai.models.transcript import MeetingTranscript, TranscriptSummary
@@ -33,11 +33,30 @@ async def get_transcript(db: AsyncSession, transcript_id: uuid.UUID) -> MeetingT
     return result.scalar_one_or_none()
 
 
-async def list_transcripts_by_user(db: AsyncSession, user_id: uuid.UUID) -> list[MeetingTranscript]:
+async def list_transcripts_by_user(
+    db: AsyncSession, user_id: uuid.UUID, offset: int = 0, limit: int = 25,
+) -> list[MeetingTranscript]:
     result = await db.execute(
         select(MeetingTranscript)
         .where(MeetingTranscript.submitter_id == user_id)
         .order_by(MeetingTranscript.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def count_transcripts_by_user(db: AsyncSession, user_id: uuid.UUID) -> int:
+    result = await db.execute(
+        select(func.count(MeetingTranscript.id))
+        .where(MeetingTranscript.submitter_id == user_id)
+    )
+    return result.scalar_one()
+
+
+async def get_transcripts_by_ids(db: AsyncSession, transcript_ids: list[uuid.UUID]) -> list[MeetingTranscript]:
+    result = await db.execute(
+        select(MeetingTranscript).where(MeetingTranscript.id.in_(transcript_ids))
     )
     return list(result.scalars().all())
 

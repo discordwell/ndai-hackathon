@@ -2,6 +2,28 @@
 
 ## Session Summaries
 
+### 2026-03-22T~21:30Z — Poker System Polish (Production + Presentation Ready)
+- **Backend data foundation**: Fixed PokerHand field population at hand completion (community_cards, pots_awarded, result_hash, deck_seed_hash now persisted). Added PokerHandAction persistence (was model without writes). Added `GET /tables/{table_id}/hands` paginated list endpoint with cursor. Fixed N+1 query in list_tables (subquery join). Fixed import order in poker_client.py.
+- **Hand History page**: Full rewrite of 10-line stub → ~300-line page with table filter dropdown, paginated hand cards showing community cards (PlayingCard sm), pot amounts, winner/hand rank, settlement tx links (basescan.org), TEE verification badges. Click-to-expand shows action replay, pot breakdown, deck seed hash, result hash, full VerificationPanel.
+- **Table UX**: New ActionLog component (color-coded, auto-scroll, bottom-right panel). Per-seat last-action badges (fade after 3s). Verification panel moved to toggleable drawer via "TEE Verified" button in top bar. Friendly winner names in HandResultOverlay ("You" / "Seat N" instead of truncated UUID).
+- **Lobby polish**: Quick Join button. "Seated" badge with green dot on tables where user is sitting (via new `my_seat` field in TableSummaryResponse).
+- **Visual polish**: Card deal animation (`@keyframes dealCard`). Phase indicator crossfade animation. Keyboard shortcuts (F=fold, C=check/call, R=raise, A=all-in, arrows=adjust slider) with `<kbd>` hint badges. Scrollbar styling for action log.
+- **Backend hardening**: Rebuy endpoint (`POST /tables/{table_id}/rebuy`). Table close endpoint (`POST /tables/{table_id}/close`, creator-only).
+- **Tests**: 10 new tests validating hand event data completeness (community cards, pots, deck_seed_hash, stack_updates, verification chain). All 88 poker tests pass.
+- **New schemas**: HandSummaryResponse, HandDetailResponse, HandActionResponse, HandSummary/HandDetail/HandAction TS interfaces.
+- Files: 1 new component (ActionLog), 1 new test file, ~15 modified files. New SSE event types: player_rebuy, table_closed.
+
+### 2026-03-22T~20:00Z — Props System Polish (Production + Presentation Ready)
+- **Backend**: Made transcript processing async (returns 201 immediately, TEE runs in background task). Fixed N+1 ownership check in aggregation (batch query). Added pagination to list endpoint (`offset`/`limit` params, `PaginatedTranscriptResponse`). Aggregation now filters to completed-only transcripts.
+- **New shared components**: `BulletList.tsx` (de-duped from 2 pages), `CopyButton.tsx` (clipboard with "Copied!" feedback), `SectionCard.tsx` (standardized card wrapper with icon + title + badge).
+- **Submit page**: Character count with color thresholds, paste detection flash, redirects to summary page (not list).
+- **Summary page**: Processing state polling with 3-step stepper (Submitted > Processing in TEE > Summary Ready). Section icons for 2x2 grid. Markdown export. `fadeSlideUp` animations throughout.
+- **List page**: Search by title/team, status filter dropdown, team filter dropdown, pagination controls, auto-refresh for processing items, staggered card entrance animations.
+- **Aggregation page**: Completed-only filter with hidden count note, Select All / Clear buttons, team filter, left-border accent on selected items, Markdown export, `scaleIn` animation on results.
+- **Verification panels**: CopyButton on session_id, final_hash, event data_hashes, policy_hash, request_hash across VerificationPanel, PolicyDisplay, EgressLogDisplay.
+- **Tests**: Rewrote from 3 weak tests to 10 comprehensive tests with polling helper. Covers async submit status, pagination, summary 404 during processing, summary after completion, aggregation min-2 validation, aggregation success, cross-user access control on transcripts/summaries/aggregation.
+- Files: 3 new, ~15 modified. Frontend builds clean, Python compiles OK.
+
 ### 2026-03-22T24:00Z — Serious Customer System + Auction Feature
 - **SeriousCustomer.sol**: $5K USD deposit (Chainlink ETH/USD price feed) for buyers. Refundable on first deal >= $50K. Operator can grant SC to verified exploit publishers.
 - **VulnAuction.sol + VulnAuctionFactory.sol**: English auction with reserve price, duration, SC-only gate. Pull-pattern refunds for outbid bidders. 90/10 seller/platform split on settlement.

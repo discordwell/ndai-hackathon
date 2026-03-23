@@ -15,6 +15,13 @@ export interface TranscriptResponse {
   created_at: string;
 }
 
+export interface PaginatedTranscriptResponse {
+  items: TranscriptResponse[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
 export interface TranscriptSummaryResponse {
   id: string;
   transcript_id: string;
@@ -43,7 +50,7 @@ export interface AggregationResponse {
 }
 
 export const submitTranscript = (data: TranscriptSubmitRequest) => post<TranscriptResponse>("/transcripts/", data);
-export const listTranscripts = () => get<TranscriptResponse[]>("/transcripts/");
+export const listTranscripts = (offset = 0, limit = 25) => get<PaginatedTranscriptResponse>(`/transcripts/?offset=${offset}&limit=${limit}`);
 export const getTranscript = (id: string) => get<TranscriptResponse>(`/transcripts/${id}`);
 export const getSummary = (id: string) => get<TranscriptSummaryResponse>(`/transcripts/${id}/summary`);
 export const aggregate = (ids: string[]) => post<AggregationResponse>("/transcripts/aggregate", { transcript_ids: ids });

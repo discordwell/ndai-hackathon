@@ -7,8 +7,8 @@ from pydantic import BaseModel, Field
 
 class TranscriptSubmitRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
-    team_name: str | None = None
-    content: str = Field(..., min_length=10)
+    team_name: str | None = Field(default=None, max_length=255)
+    content: str = Field(..., min_length=10, max_length=200_000)
 
 
 class TranscriptResponse(BaseModel):
@@ -35,6 +35,13 @@ class TranscriptSummaryResponse(BaseModel):
     policy_constraints: list[dict] | None = None
     egress_log: list[dict] | None = None
     verification: dict | None = None
+
+
+class PaginatedTranscriptResponse(BaseModel):
+    items: list[TranscriptResponse]
+    total: int
+    offset: int
+    limit: int
 
 
 class AggregationRequest(BaseModel):

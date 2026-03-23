@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { CopyButton } from "./CopyButton";
 
 interface PolicyConstraint {
   field: string;
@@ -25,8 +26,8 @@ interface Props {
   constraints: PolicyConstraint[] | null | undefined;
 }
 
-export function PolicyDisplay({ report, constraints }: Props) {
-  const [expanded, setExpanded] = useState(false);
+export function PolicyDisplay({ report, constraints, defaultExpanded = true }: Props & { defaultExpanded?: boolean }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
 
   if (!report) return null;
 
@@ -54,10 +55,9 @@ export function PolicyDisplay({ report, constraints }: Props) {
         <span className="text-xs text-gray-400">{expanded ? "collapse" : "expand"}</span>
       </button>
 
-      <div className="mt-2">
-        <code className="text-xs bg-gray-50 px-2 py-0.5 rounded font-mono text-gray-500">
-          Policy hash: {report.policy_hash.slice(0, 24)}...
-        </code>
+      <div className="mt-2 flex items-center gap-1">
+        <span className="text-xs text-gray-500">Policy hash:</span>
+        <CopyButton value={report.policy_hash} truncateLength={24} />
       </div>
 
       {expanded && (

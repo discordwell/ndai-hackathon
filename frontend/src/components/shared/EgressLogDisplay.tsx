@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { CopyButton } from "./CopyButton";
 
 interface EgressEntry {
   timestamp: string;
@@ -14,8 +15,8 @@ interface Props {
   entries: EgressEntry[] | null | undefined;
 }
 
-export function EgressLogDisplay({ entries }: Props) {
-  const [expanded, setExpanded] = useState(false);
+export function EgressLogDisplay({ entries, defaultExpanded = true }: Props & { defaultExpanded?: boolean }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
 
   if (!entries || entries.length === 0) return null;
 
@@ -70,9 +71,7 @@ export function EgressLogDisplay({ entries }: Props) {
                     {formatBytes(entry.response_bytes)}
                   </td>
                   <td className="py-2 px-3">
-                    <code className="font-mono text-gray-400">
-                      {entry.request_hash.slice(0, 12)}...
-                    </code>
+                    <CopyButton value={entry.request_hash} truncateLength={12} />
                   </td>
                   <td className="py-2 pl-3 text-gray-400">
                     {new Date(entry.timestamp).toLocaleTimeString()}
