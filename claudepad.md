@@ -2,6 +2,15 @@
 
 ## Session Summaries
 
+### 2026-03-22T24:00Z — Serious Customer System + Auction Feature
+- **SeriousCustomer.sol**: $5K USD deposit (Chainlink ETH/USD price feed) for buyers. Refundable on first deal >= $50K. Operator can grant SC to verified exploit publishers.
+- **VulnAuction.sol + VulnAuctionFactory.sol**: English auction with reserve price, duration, SC-only gate. Pull-pattern refunds for outbid bidders. 90/10 seller/platform split on settlement.
+- 39 new Forge tests (19 SeriousCustomer + 20 VulnAuction) — all passing.
+- **Backend**: SC fields on VulnIdentity, `serious_customers_only` on ZKVulnerability, new `ZKVulnAuction` + `ZKVulnAuctionBid` models. Blockchain clients for both contracts. API routes: `/serious-customer/{status,deposit,min-deposit}`, `/zk-auctions/` full CRUD.
+- **SC Gate**: API-level filtering (non-SC users can't see SC-only listings) + agreement creation gate (403 for non-SC on SC-only vulns).
+- **Frontend**: Auctions tab on marketplace, SC-only badges on listing cards, SC status card on identity page with MetaMask deposit flow, auction create/detail pages with countdown timer + bid history.
+- Installed `chainlink-brownie-contracts` as foundry dependency, updated Deploy.s.sol.
+
 ### 2026-03-23T23:00Z — Sealed Verification Pipeline + PCR0 On-Chain + Architecture Overhaul
 - Consolidated `zdayzk-frontend/` into `frontend-zk/` (deleted 5,587 lines of dead code)
 - Fixed vulns API: repointed frontend from `/vulns/` to `/zk-vulns/` (ZK auth), added ALGORITHMIC vs DECLARATIVE field distinction

@@ -43,6 +43,8 @@ import { ZKMyListingsPage } from "../pages/zk/ZKMyListingsPage";
 import { ZKDealPage } from "../pages/zk/ZKDealPage";
 import { ZKDealsListPage } from "../pages/zk/ZKDealsListPage";
 import { ZKIdentityPage } from "../pages/zk/ZKIdentityPage";
+import { ZKAuctionPage } from "../pages/zk/ZKAuctionPage";
+import { ZKAuctionCreatePage } from "../pages/zk/ZKAuctionCreatePage";
 
 function useHash(): string {
   const [hash, setHash] = useState(window.location.hash || "#/login");
@@ -173,6 +175,9 @@ export function Router() {
   if (path === "/zk/mine") return <ZKLayout><ZKMyListingsPage /></ZKLayout>;
   if (path === "/zk/deals") return <ZKLayout><ZKDealsListPage /></ZKLayout>;
   if (path === "/zk/identity") return <ZKLayout><ZKIdentityPage /></ZKLayout>;
+  if (path === "/zk/auctions/new") return <ZKLayout><ZKAuctionCreatePage /></ZKLayout>;
+  const zkAuctionMatch = path.match(/^\/zk\/auctions\/([^/]+)$/);
+  if (zkAuctionMatch) return <ZKLayout><ZKAuctionPage auctionId={zkAuctionMatch[1]} /></ZKLayout>;
   const zkDealMatch = path.match(/^\/zk\/deals\/([^/]+)$/);
   if (zkDealMatch) return <ZKLayout><ZKDealPage dealId={zkDealMatch[1]} /></ZKLayout>;
 

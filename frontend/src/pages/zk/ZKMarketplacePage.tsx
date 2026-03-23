@@ -8,6 +8,10 @@ import {
   listOpenBounties,
   type BountyResponse,
 } from "../../api/bounties";
+import {
+  listAuctions,
+  type ZKAuctionResponse,
+} from "../../api/zkAuctions";
 
 const IMPACT_COLORS: Record<string, string> = {
   RCE: "bg-red-500/20 text-red-400 border-red-500/30",
@@ -24,9 +28,10 @@ function cvssColor(score: number): string {
 }
 
 export function ZKMarketplacePage() {
-  const [tab, setTab] = useState<"listings" | "bounties">("listings");
+  const [tab, setTab] = useState<"listings" | "bounties" | "auctions">("listings");
   const [listings, setListings] = useState<ZKVulnListingResponse[]>([]);
   const [bounties, setBounties] = useState<BountyResponse[]>([]);
+  const [auctions, setAuctions] = useState<ZKAuctionResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -43,10 +48,15 @@ export function ZKMarketplacePage() {
         .then(setListings)
         .catch((e) => setError(e.message || "Failed to load listings"))
         .finally(() => setLoading(false));
-    } else {
+    } else if (tab === "bounties") {
       listOpenBounties()
         .then(setBounties)
         .catch((e) => setError(e.message || "Failed to load bounties"))
+        .finally(() => setLoading(false));
+    } else {
+      listAuctions()
+        .then(setAuctions)
+        .catch((e) => setError(e.message || "Failed to load auctions"))
         .finally(() => setLoading(false));
     }
   }, [tab]);
@@ -85,6 +95,14 @@ export function ZKMarketplacePage() {
               + Post Bounty
             </a>
           )}
+          {tab === "auctions" && (
+            <a
+              href="#/zk/auctions/new"
+              className="px-3 py-1.5 bg-void-500 hover:bg-void-400 text-white rounded text-xs font-medium transition-colors"
+            >
+              + Create Auction
+            </a>
+          )}
         </div>
       </div>
 
@@ -109,6 +127,16 @@ export function ZKMarketplacePage() {
           }`}
         >
           Bounties
+        </button>
+        <button
+          onClick={() => setTab("auctions")}
+          className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
+            tab === "auctions"
+              ? "border-void-400 text-void-50"
+              : "border-transparent text-void-400 hover:text-void-200"
+          }`}
+        >
+          Auctions
         </button>
       </div>
 
@@ -172,6 +200,11 @@ export function ZKMarketplacePage() {
                     >
                       {v.exclusivity}
                     </span>
+                    {v.serious_customers_only && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                        SC Only
+                      </span>
+                    )}
                   </div>
 
                   {v.anonymized_summary && (
@@ -217,7 +250,7 @@ export function ZKMarketplacePage() {
             </div>
           )}
         </div>
-      ) : (
+      ) : tab === "bounties" ? (
         /* ── Bounties Tab ── */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {bounties.length === 0 ? (
@@ -267,6 +300,70 @@ export function ZKMarketplacePage() {
                 </a>
               </div>
             ))
+          )}
+        </div>
+      ) : (
+        /* ── Auctions Tab ── */
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {auctions.length === 0 ? (
+            <div className="col-span-full text-center py-12 text-void-400 text-sm">
+              No active auctions
+            </div>
+          ) : (
+            auctions.map((a) => {
+              const endDate = a.end_time ? new Date(a.end_time) : null;
+              const isEnded = endDate ? endDate.getTime() <= Date.now() : false;
+              return (
+                <a
+                  key={a.id}
+                  href={`#/zk/auctions/${a.id}`}
+                  className="bg-void-800 border border-void-700 hover:border-void-500 rounded-lg p-4 transition-all block"
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <h3 className="text-sm font-semibold text-void-50 truncate pr-2">
+                      Auction
+                    </h3>
+                    <div className="flex gap-1">
+                      {a.serious_customers_only && (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 shrink-0">
+                          SC Only
+                        </span>
+                      )}
+                      <span
+                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${
+                          isEnded || a.status === "ended"
+                            ? "bg-yellow-500/20 text-yellow-400"
+                            : a.status === "settled"
+                            ? "bg-blue-500/20 text-blue-400"
+                            : "bg-green-500/20 text-green-400"
+                        }`}
+                      >
+                        {a.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 text-xs mb-2">
+                    <span className="text-void-400">Reserve:</span>
+                    <span className="text-void-200 font-medium">
+                      {a.reserve_price_eth} ETH
+                    </span>
+                    <span className="text-void-400">Highest:</span>
+                    <span className="text-void-50 font-medium">
+                      {a.highest_bid_eth ? `${a.highest_bid_eth} ETH` : "—"}
+                    </span>
+                  </div>
+
+                  {endDate && (
+                    <p className="text-xs text-void-400">
+                      {isEnded
+                        ? `Ended ${endDate.toLocaleDateString()}`
+                        : `Ends ${endDate.toLocaleDateString()} ${endDate.toLocaleTimeString()}`}
+                    </p>
+                  )}
+                </a>
+              );
+            })
           )}
         </div>
       )}

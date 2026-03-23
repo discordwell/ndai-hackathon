@@ -64,3 +64,28 @@ class DepositInfo:
     seller: str
     amount: int
     settled: bool
+
+
+class AuctionState(IntEnum):
+    Active = 0
+    Ended = 1
+    Settled = 2
+    Cancelled = 3
+
+
+@dataclass
+class SeriousCustomerInfo:
+    is_serious_customer: bool
+    deposit_wei: int
+    has_been_refunded: bool
+
+
+@dataclass
+class AuctionInfo:
+    seller: str
+    reserve_price_wei: int
+    end_time: int
+    sc_only: bool
+    state: AuctionState
+    highest_bidder: str
+    highest_bid_wei: int

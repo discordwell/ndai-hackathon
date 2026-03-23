@@ -17,6 +17,7 @@ export interface ZKVulnCreateRequest {
   discovery_date: string;
   patch_status?: string;
   exclusivity?: string;
+  serious_customers_only?: boolean;
 }
 
 export interface ZKAgreementCreateRequest {
@@ -40,6 +41,7 @@ export interface ZKVulnResponse {
   asking_price_eth: number;
   patch_status: string;
   exclusivity: string;
+  serious_customers_only: boolean;
   status: string;
   created_at: string;
 }
@@ -55,6 +57,7 @@ export interface ZKVulnListingResponse {
   anonymized_summary?: string;
   patch_status: string;
   exclusivity: string;
+  serious_customers_only: boolean;
   status: string;
   created_at: string;
 }

@@ -21,6 +21,7 @@ from ndai.api.schemas.zk_vulnerability import (
     ZKWalletConnectRequest,
 )
 from ndai.db.session import get_db
+from ndai.models.zk_identity import VulnIdentity
 from ndai.models.zk_vulnerability import ZKVulnAgreement, ZKVulnOutcome, ZKVulnerability
 
 router = APIRouter(prefix="", tags=["zk-vulnerabilities"])
@@ -59,6 +60,7 @@ async def create_zk_vuln(
         asking_price_eth=vuln.asking_price_eth,
         patch_status=vuln.patch_status,
         exclusivity=vuln.exclusivity,
+        serious_customers_only=vuln.serious_customers_only,
         status=vuln.status,
         created_at=vuln.created_at,
     )
@@ -98,10 +100,22 @@ async def list_zk_vuln_listings(
     pubkey: str = Depends(get_zk_identity),
     db: AsyncSession = Depends(get_db),
 ):
-    """Browse all active vulnerabilities for marketplace (anonymized -- no seller_pubkey)."""
-    result = await db.execute(
-        select(ZKVulnerability).where(ZKVulnerability.status == "active")
+    """Browse all active vulnerabilities for marketplace (anonymized -- no seller_pubkey).
+
+    SC-only listings are hidden from non-Serious-Customer buyers.
+    """
+    # Check caller's SC status
+    id_result = await db.execute(
+        select(VulnIdentity).where(VulnIdentity.public_key == pubkey)
     )
+    identity = id_result.scalar_one_or_none()
+    is_sc = identity.is_serious_customer if identity else False
+
+    query = select(ZKVulnerability).where(ZKVulnerability.status == "active")
+    if not is_sc:
+        query = query.where(ZKVulnerability.serious_customers_only == False)  # noqa: E712
+
+    result = await db.execute(query)
     vulns = result.scalars().all()
     return [
         ZKVulnListingResponse(
@@ -114,6 +128,7 @@ async def list_zk_vuln_listings(
             asking_price_eth=v.asking_price_eth,
             patch_status=v.patch_status,
             exclusivity=v.exclusivity,
+            serious_customers_only=v.serious_customers_only,
             status=v.status,
             anonymized_summary=v.anonymized_summary,
             created_at=v.created_at,
@@ -144,6 +159,15 @@ async def create_zk_agreement(
         raise HTTPException(status_code=400, detail="Vulnerability is not active")
     if vuln.seller_pubkey == pubkey:
         raise HTTPException(status_code=400, detail="Cannot buy your own vulnerability")
+
+    # SC gate: reject non-SC buyers on SC-only listings
+    if vuln.serious_customers_only:
+        id_result = await db.execute(
+            select(VulnIdentity).where(VulnIdentity.public_key == pubkey)
+        )
+        buyer_identity = id_result.scalar_one_or_none()
+        if not buyer_identity or not buyer_identity.is_serious_customer:
+            raise HTTPException(status_code=403, detail="This listing is restricted to Serious Customers")
 
     # Prevent duplicate agreements from same buyer on same vuln
     existing = await db.execute(

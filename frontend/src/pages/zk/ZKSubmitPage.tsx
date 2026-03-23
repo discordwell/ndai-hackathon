@@ -31,6 +31,7 @@ export function ZKSubmitPage() {
     discovery_date: new Date().toISOString().slice(0, 10),
     patch_status: "unpatched",
     exclusivity: "exclusive",
+    serious_customers_only: false,
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -218,6 +219,21 @@ export function ZKSubmitPage() {
               <option value="non-exclusive">Non-exclusive</option>
             </select>
           </div>
+        </div>
+
+        {/* Serious Customers Only */}
+        <div className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            id="sc-only"
+            checked={form.serious_customers_only}
+            onChange={(e) => update("serious_customers_only", e.target.checked)}
+            className="w-4 h-4 rounded border-void-600 bg-void-900 text-void-400 focus:ring-void-500"
+          />
+          {/* human-requested: SC-only toggle label */}
+          <label htmlFor="sc-only" className="text-xs text-void-200">
+            Restrict visibility to Serious Customers only ($5K deposit required)
+          </label>
         </div>
 
         {/* Submit */}

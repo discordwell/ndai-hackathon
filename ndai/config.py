@@ -92,6 +92,12 @@ class Settings(BaseSettings):
     verification_deposit_address: str = ""  # VerificationDeposit.sol contract address
     target_update_interval_hours: int = 6
 
+    # Serious Customer
+    serious_customer_address: str = ""  # SeriousCustomer.sol contract address
+
+    # Auctions
+    vuln_auction_factory_address: str = ""  # VulnAuctionFactory.sol contract address
+
     # Windows verification (EC2 VM path)
     windows_ami_id: str = ""  # Windows Server 2022 AMI
     windows_instance_type: str = "m5.large"

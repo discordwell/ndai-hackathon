@@ -17,6 +17,7 @@ from ndai.models.bounty import Bounty
 from ndai.models.messaging import MessagingPrekey, MessagingOTPK, MessagingConversation, MessagingMessage
 from ndai.models.known_target import KnownTarget, TargetBuild
 from ndai.models.verification_proposal import VerificationProposal
+from ndai.models.zk_auction import ZKVulnAuction, ZKVulnAuctionBid
 
 __all__ = [
     "Base",
@@ -53,4 +54,6 @@ __all__ = [
     "KnownTarget",
     "TargetBuild",
     "VerificationProposal",
+    "ZKVulnAuction",
+    "ZKVulnAuctionBid",
 ]
