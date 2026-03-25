@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy import LargeBinary, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -71,6 +71,7 @@ class PokerHand(Base):
 
     __table_args__ = (
         UniqueConstraint("table_id", "hand_number", name="uq_poker_table_hand"),
+        Index("ix_poker_hands_table_id_hand_number", "table_id", "hand_number"),
     )
 
 
@@ -86,3 +87,7 @@ class PokerHandAction(Base):
     amount: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_poker_hand_actions_hand_id_sequence", "hand_id", "sequence"),
+    )

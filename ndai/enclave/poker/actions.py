@@ -117,8 +117,11 @@ def _handle_join_table(
 
     if preferred is not None:
         preferred = int(preferred)
-        if 0 <= preferred < table.max_seats and table.seats[preferred] is None:
-            seat_index = preferred
+        if preferred < 0 or preferred >= table.max_seats:
+            return {"status": "error", "error": f"Invalid seat number: {preferred} (table has seats 0-{table.max_seats - 1})"}
+        if table.seats[preferred] is not None:
+            return {"status": "error", "error": f"Seat {preferred} is already taken"}
+        seat_index = preferred
 
     if seat_index is None:
         for i in range(table.max_seats):

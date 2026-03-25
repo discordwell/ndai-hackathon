@@ -59,6 +59,14 @@ def start_hand(table: TableState) -> tuple[list[dict], dict[str, list[Card]]]:
                 table.dealer_seat = i
                 break
 
+    # Validate dealer seat — handle sit-out + leave edge case
+    dealer = table.seats[table.dealer_seat]
+    if dealer is None or dealer.is_sitting_out:
+        table.dealer_seat = table.next_occupied_seat(table.dealer_seat)
+        dealer = table.seats[table.dealer_seat]
+        if dealer is None or dealer.is_sitting_out:
+            raise PokerEngineError("No active players for dealer")
+
     # Shuffle deck
     deck, seed, seed_hash = shuffle_deck()
 
@@ -458,12 +466,7 @@ def _advance_phase(table: TableState) -> list[dict]:
         return events
 
     # Set action: first active player after dealer
-    active_count = len(hand.active_players(table.seats))
-    if active_count == 2 and len(table.seated_players()) == 2:
-        # Heads-up post-flop: non-dealer acts first
-        hand.action_on = table.next_active_seat(hand.dealer_seat)
-    else:
-        hand.action_on = table.next_active_seat(hand.dealer_seat)
+    hand.action_on = table.next_active_seat(hand.dealer_seat)
 
     _skip_all_in_players(table)
 
@@ -553,8 +556,8 @@ def _collect_bets_into_pots(table: TableState) -> None:
             contribution = min(s.total_bet_this_hand, level) - prev_level
             if contribution > 0:
                 pot_amount += contribution
-            # Only active (non-folded) players who bet at least this level are eligible
-            if s.is_active and s.total_bet_this_hand >= level:
+            # Only active (non-folded, non-sitting-out) players who bet at least this level are eligible
+            if s.is_active and not s.is_sitting_out and s.total_bet_this_hand >= level:
                 eligible.append(s.player_id)
 
         if pot_amount > 0:

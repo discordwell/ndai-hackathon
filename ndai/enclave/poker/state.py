@@ -158,12 +158,16 @@ class TableState:
         return from_seat
 
     def next_active_seat(self, from_seat: int) -> int | None:
-        """Find next seat with an active (not folded, not all-in) player who can act."""
+        """Find next seat with an active (not folded, not all-in) player who can act.
+
+        Note: does NOT check is_sitting_out — a player who sits out mid-hand
+        should still complete the current hand; is_active is the correct filter.
+        """
         if self.hand is None:
             return None
         for i in range(1, self.max_seats + 1):
             idx = (from_seat + i) % self.max_seats
             seat = self.seats[idx]
-            if seat is not None and seat.is_active and not seat.is_sitting_out and seat.stack > 0:
+            if seat is not None and seat.is_active and seat.stack > 0:
                 return idx
         return None

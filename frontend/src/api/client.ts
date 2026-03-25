@@ -1,3 +1,5 @@
+import { emitUnauthorized } from "../utils/authEvents";
+
 const API_BASE = "/api/v1";
 
 class ApiError extends Error {
@@ -31,6 +33,9 @@ async function request<T>(
   });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      emitUnauthorized();
+    }
     const body = await res.json().catch(() => ({ detail: res.statusText }));
     throw new ApiError(res.status, body.detail || res.statusText);
   }

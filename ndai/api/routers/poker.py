@@ -5,7 +5,9 @@ import hashlib
 import json
 import logging
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from time import monotonic
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -30,14 +32,50 @@ from ndai.tee.poker_orchestrator import get_poker_orchestrator
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# SSE queues: table_id -> {player_id -> Queue}
-_table_queues: dict[str, dict[str, asyncio.Queue]] = {}
+
+@dataclass
+class _SSEConnection:
+    queue: asyncio.Queue
+    created_at: float = field(default_factory=monotonic)
+    last_write: float = field(default_factory=monotonic)
+    user_id: str = ""
+
+
+# Critical event types that must not be silently dropped
+_CRITICAL_EVENT_TYPES = frozenset({"hand_end", "hand_verification", "settlement", "table_closed", "hand_start"})
+
+# SSE connections: table_id -> {player_id -> _SSEConnection}
+_table_queues: dict[str, dict[str, _SSEConnection]] = {}
 # Background tasks (prevent GC)
 _tasks: set[asyncio.Task] = set()
 # Per-table locks to prevent double hand starts
 _table_locks: dict[str, asyncio.Lock] = {}
 # Action sequence counters: "table_id:hand_number" -> next sequence
 _action_sequence: dict[str, int] = {}
+
+_ZOMBIE_TIMEOUT = 120  # seconds
+_cleanup_task: asyncio.Task | None = None
+
+
+async def _cleanup_zombie_connections():
+    while True:
+        await asyncio.sleep(60)
+        now = monotonic()
+        for table_id, conns in list(_table_queues.items()):
+            for player_id, conn in list(conns.items()):
+                if now - conn.last_write > _ZOMBIE_TIMEOUT:
+                    logger.warning("Removing zombie SSE: player %s table %s", player_id, table_id)
+                    conns.pop(player_id, None)
+            if not conns:
+                _table_queues.pop(table_id, None)
+
+
+def _ensure_cleanup_task():
+    global _cleanup_task
+    if _cleanup_task is None or _cleanup_task.done():
+        _cleanup_task = asyncio.create_task(_cleanup_zombie_connections())
+        _tasks.add(_cleanup_task)
+        _cleanup_task.add_done_callback(_tasks.discard)
 
 
 # ---------------------------------------------------------------------------
@@ -164,17 +202,31 @@ async def _emit_poker_event(
     player_hands: dict | None = None,
 ) -> None:
     """Broadcast a game event to all SSE subscribers, filtering per player."""
-    queues = _table_queues.get(table_id, {})
-    for player_id, queue in queues.items():
+    conns = _table_queues.get(table_id, {})
+    for player_id, conn in conns.items():
         filtered = {**data}
         if player_hands:
             filtered["your_hole_cards"] = player_hands.get(player_id)
         else:
             filtered.pop("player_hands", None)
         try:
-            queue.put_nowait({"type": event_type, "data": filtered})
+            conn.queue.put_nowait({"type": event_type, "data": filtered})
         except asyncio.QueueFull:
-            logger.warning("SSE queue full for player %s at table %s", player_id, table_id)
+            if event_type in _CRITICAL_EVENT_TYPES:
+                logger.error(
+                    "SSE queue full for CRITICAL event %s, player %s at table %s — draining and disconnecting",
+                    event_type, player_id, table_id,
+                )
+                # Drain the queue
+                while not conn.queue.empty():
+                    try:
+                        conn.queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+                # Push disconnect sentinel so client reconnects with fresh state
+                conn.queue.put_nowait({"type": "_disconnect", "data": {}})
+            else:
+                logger.warning("SSE queue full for player %s at table %s", player_id, table_id)
 
 
 async def _broadcast_events(table_id: str, events: list[dict], player_hands: dict | None = None) -> None:
@@ -304,31 +356,29 @@ def _get_table_lock(table_id: str) -> asyncio.Lock:
 
 async def _maybe_start_next_hand(table_id: str) -> None:
     """Auto-start next hand after a delay if conditions are met."""
-    orchestrator = get_poker_orchestrator()
+    await asyncio.sleep(3)  # Brief pause between hands (outside lock)
 
-    # Check if hand is over
-    result = await orchestrator.send_action({
-        "action": "poker_get_table",
-        "table_id": table_id,
-    })
-    if result.get("status") != "ok":
-        return
+    lock = _get_table_lock(table_id)
+    async with lock:
+        orchestrator = get_poker_orchestrator()
 
-    view = result.get("table_view", {})
-    phase = view.get("phase", "")
-
-    # Count seated players
-    seated = sum(1 for s in view.get("seats", []) if s is not None)
-    if seated < 2:
-        return
-
-    if phase in ("waiting", "showdown", "settling") or (view.get("hand_number") is not None and phase == "waiting"):
-        await asyncio.sleep(3)  # Brief pause between hands
-        # Use lock to prevent double hand starts
-        lock = _get_table_lock(table_id)
-        if lock.locked():
+        # Check if hand is over
+        result = await orchestrator.send_action({
+            "action": "poker_get_table",
+            "table_id": table_id,
+        })
+        if result.get("status") != "ok":
             return
-        async with lock:
+
+        view = result.get("table_view", {})
+        phase = view.get("phase", "")
+
+        # Count seated players
+        seated = sum(1 for s in view.get("seats", []) if s is not None)
+        if seated < 2:
+            return
+
+        if phase in ("waiting", "showdown", "settling") or (view.get("hand_number") is not None and phase == "waiting"):
             await _do_start_hand(table_id)
 
 
@@ -358,13 +408,22 @@ async def _do_start_hand(table_id: str) -> None:
 
     # Also send each player their hole cards as a dedicated event
     for player_id, cards in player_hands.items():
-        queues = _table_queues.get(table_id, {})
-        q = queues.get(player_id)
-        if q:
+        conns = _table_queues.get(table_id, {})
+        conn = conns.get(player_id)
+        if conn:
             try:
-                q.put_nowait({"type": "deal_hole_cards", "data": {"hole_cards": cards}})
+                conn.queue.put_nowait({"type": "deal_hole_cards", "data": {"hole_cards": cards}})
             except asyncio.QueueFull:
-                pass
+                logger.error(
+                    "SSE queue full for CRITICAL deal_hole_cards, player %s at table %s — draining and disconnecting",
+                    player_id, table_id,
+                )
+                while not conn.queue.empty():
+                    try:
+                        conn.queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+                conn.queue.put_nowait({"type": "_disconnect", "data": {}})
 
     # Set up timeout for first player
     _setup_action_timeout(table_id, events)
@@ -724,22 +783,20 @@ async def start_hand_endpoint(
     user_id: str = Depends(get_current_user),
 ):
     """Manually start a new hand (if auto-start hasn't triggered)."""
-    # Verify the requesting user is seated at this table
-    orchestrator = get_poker_orchestrator()
-    result = await orchestrator.send_action({
-        "action": "poker_get_table",
-        "table_id": table_id,
-        "player_id": user_id,
-    })
-    if result.get("status") != "ok":
-        raise HTTPException(status_code=404, detail="Table not found")
-    view = result.get("table_view", {})
-    if not any(s and s.get("player_id") == user_id for s in view.get("seats", [])):
-        raise HTTPException(status_code=403, detail="Must be seated to start a hand")
     lock = _get_table_lock(table_id)
-    if lock.locked():
-        return {"status": "ok"}  # Another start is already in progress
     async with lock:
+        # Verify the requesting user is seated at this table
+        orchestrator = get_poker_orchestrator()
+        result = await orchestrator.send_action({
+            "action": "poker_get_table",
+            "table_id": table_id,
+            "player_id": user_id,
+        })
+        if result.get("status") != "ok":
+            raise HTTPException(status_code=404, detail="Table not found")
+        view = result.get("table_view", {})
+        if not any(s and s.get("player_id") == user_id for s in view.get("seats", [])):
+            raise HTTPException(status_code=403, detail="Must be seated to start a hand")
         await _do_start_hand(table_id)
     return {"status": "ok"}
 
@@ -757,10 +814,22 @@ async def stream_table(
     from ndai.api.dependencies import decode_token
     user_id = decode_token(token)
 
+    # Issue 4: Verify the user is seated before registering a connection
+    orchestrator = get_poker_orchestrator()
+    result = await orchestrator.send_action({"action": "poker_get_table", "table_id": table_id})
+    if result.get("status") != "ok":
+        raise HTTPException(status_code=404, detail="Table not found")
+    view = result.get("table_view", {})
+    if not any(s and s.get("player_id") == user_id for s in view.get("seats", [])):
+        raise HTTPException(status_code=403, detail="Must be seated to stream events")
+
     queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+    conn = _SSEConnection(queue=queue, user_id=user_id)
     if table_id not in _table_queues:
         _table_queues[table_id] = {}
-    _table_queues[table_id][user_id] = queue
+    _table_queues[table_id][user_id] = conn
+
+    _ensure_cleanup_task()
 
     async def event_generator():
         try:
@@ -773,16 +842,22 @@ async def stream_table(
             })
             if result.get("status") == "ok":
                 yield f"event: game_state\ndata: {json.dumps(result['table_view'])}\n\n"
+                conn.last_write = monotonic()
 
             while True:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    # Check for disconnect sentinel (Issue 2)
+                    if event["type"] == "_disconnect":
+                        return
                     yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
+                    conn.last_write = monotonic()
                 except TimeoutError:
                     yield ": keepalive\n\n"
+                    conn.last_write = monotonic()
         finally:
-            queues = _table_queues.get(table_id, {})
-            queues.pop(user_id, None)
+            conns = _table_queues.get(table_id, {})
+            conns.pop(user_id, None)
 
     return StreamingResponse(
         event_generator(),

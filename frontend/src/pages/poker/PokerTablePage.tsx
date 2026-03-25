@@ -8,15 +8,12 @@ import { VerificationPanel } from "../../components/shared/VerificationPanel";
 import ActionLog from "../../components/poker/ActionLog";
 import type { ActionEntry } from "../../components/poker/ActionLog";
 import type { TableView } from "../../api/pokerTypes";
+import { decodeJwtPayload } from "../../utils/jwt";
 
 export function PokerTablePage({ tableId }: { tableId: string }) {
   const { token } = useAuth();
-  let userId: string | null = null;
-  try {
-    userId = token ? JSON.parse(atob(token.split(".")[1])).sub : null;
-  } catch {
-    // Malformed token — will be null
-  }
+  const payload = token ? decodeJwtPayload(token) : null;
+  const userId = (payload?.sub as string) ?? null;
   const { tableView: streamView, lastEvent, isConnected, error: streamError, connect, disconnect } = usePokerStream(tableId, token);
   const [tableView, setTableView] = useState<TableView | null>(null);
   const [showBuyIn, setShowBuyIn] = useState(false);
