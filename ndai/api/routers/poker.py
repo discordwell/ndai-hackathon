@@ -6,7 +6,7 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from time import monotonic
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -144,7 +144,7 @@ async def _persist_hand_completion(
             if verification:
                 hand_row.verification_data = verification
 
-            hand_row.ended_at = datetime.now(timezone.utc)
+            hand_row.ended_at = datetime.now(UTC)
             await db.commit()
     except Exception:
         logger.warning("Failed to persist hand completion data for hand %d", hand_number)
@@ -697,7 +697,7 @@ async def leave_table(
         seat.status = "left"
         seat.cashout_amount = result.get("cashout_amount", 0)
         seat.current_stack = 0
-        seat.left_at = datetime.now(timezone.utc)
+        seat.left_at = datetime.now(UTC)
         await db.commit()
 
     # Broadcast
@@ -1093,11 +1093,11 @@ async def close_table(
         seat.status = "left"
         seat.cashout_amount = stack_map.get(str(seat.player_id), 0)
         seat.current_stack = 0
-        seat.left_at = datetime.now(timezone.utc)
+        seat.left_at = datetime.now(UTC)
 
     # Close table in DB
     poker_table.status = "closed"
-    poker_table.closed_at = datetime.now(timezone.utc)
+    poker_table.closed_at = datetime.now(UTC)
     await db.commit()
 
     # Broadcast close event BEFORE cleaning up queues

@@ -11,7 +11,6 @@ Manages the full lifecycle:
 """
 
 import asyncio
-import json
 import logging
 import os
 import time
@@ -19,7 +18,7 @@ from dataclasses import dataclass
 
 from ndai.config import Settings
 from ndai.config import settings as default_settings
-from ndai.enclave.vuln_verify.models import TargetSpec, VerificationResult
+from ndai.enclave.vuln_verify.models import TargetSpec
 from ndai.tee.attestation import verify_attestation
 from ndai.tee.provider import EnclaveConfig, EnclaveIdentity, TEEError, TEEProvider, TEEType
 
@@ -96,7 +95,6 @@ class VulnVerifyOrchestrator:
 
             # Run verification protocol in-process
             from ndai.enclave.vuln_verify.protocol import VulnVerificationProtocol
-            from ndai.enclave.vuln_verify.overlay_handler import OverlayHandler
 
             overlay = None
             overlay_handler = None

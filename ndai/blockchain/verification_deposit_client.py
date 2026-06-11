@@ -10,7 +10,7 @@ from eth_account.signers.local import LocalAccount
 from web3 import AsyncWeb3
 from web3.providers import AsyncHTTPProvider
 
-from ndai.blockchain.models import DepositInfo, VerificationDepositState
+from ndai.blockchain.models import DepositInfo
 
 logger = logging.getLogger(__name__)
 

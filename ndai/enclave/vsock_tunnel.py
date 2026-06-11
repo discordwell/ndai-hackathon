@@ -21,7 +21,6 @@ Only whitelisted hosts are allowed to prevent misuse.
 import asyncio
 import logging
 import socket
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +132,7 @@ class VsockTunnel:
         self._server_sock.settimeout(1.0)
         try:
             return self._server_sock.accept()
-        except socket.timeout as exc:
+        except TimeoutError as exc:
             raise TimeoutError from exc
 
     async def _handle_connection(
@@ -175,7 +174,7 @@ class VsockTunnel:
                     tcp_sock = socket.create_connection((host, port), timeout=10)
                     tcp_sock.setblocking(True)
                 except Exception as exc:
-                    error_msg = f"ERROR {exc}\n".encode("utf-8")
+                    error_msg = f"ERROR {exc}\n".encode()
                     await loop.run_in_executor(
                         None, vsock_conn.sendall, error_msg
                     )

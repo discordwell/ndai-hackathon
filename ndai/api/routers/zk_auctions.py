@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -74,7 +74,7 @@ async def create_auction(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Active auction already exists for this vulnerability")
 
-    end_time = datetime.now(timezone.utc) + timedelta(hours=request.duration_hours)
+    end_time = datetime.now(UTC) + timedelta(hours=request.duration_hours)
 
     auction = ZKVulnAuction(
         vulnerability_id=vuln.id,
@@ -168,7 +168,7 @@ async def place_bid(
         raise HTTPException(status_code=400, detail="Cannot bid on your own auction")
 
     # Time check
-    if auction.end_time and datetime.now(timezone.utc) >= auction.end_time:
+    if auction.end_time and datetime.now(UTC) >= auction.end_time:
         raise HTTPException(status_code=400, detail="Auction has ended")
 
     # SC gate
@@ -245,7 +245,7 @@ async def end_auction(
         raise HTTPException(status_code=404, detail="Auction not found")
     if auction.status != "active":
         raise HTTPException(status_code=400, detail="Auction not active")
-    if auction.end_time and datetime.now(timezone.utc) < auction.end_time:
+    if auction.end_time and datetime.now(UTC) < auction.end_time:
         raise HTTPException(status_code=400, detail="Auction has not ended yet")
 
     auction.status = "ended"

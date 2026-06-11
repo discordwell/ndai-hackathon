@@ -199,7 +199,7 @@ class VsockLLMClient:
 
         try:
             response_dict = self._vsock_roundtrip(request)
-        except (ConnectionError, OSError, socket.timeout) as exc:
+        except (TimeoutError, ConnectionError, OSError) as exc:
             logger.error("vsock transport error: %s", exc)
             raise VsockLLMError(f"vsock transport error: {exc}") from exc
 

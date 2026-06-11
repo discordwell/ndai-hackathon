@@ -32,10 +32,10 @@ async def _check_deal_accepted(agreement_id: str) -> bool:
         return True  # Simplified — production checks on-chain
 
     try:
-        from ndai.blockchain.vuln_escrow_client import VulnEscrowClient
         from ndai.blockchain.models import VulnEscrowState
-        from ndai.db.session import async_session
+        from ndai.blockchain.vuln_escrow_client import VulnEscrowClient
         from ndai.db.repositories import get_vuln_agreement
+        from ndai.db.session import async_session
 
         async with async_session() as db:
             agreement = await get_vuln_agreement(db, uuid.UUID(agreement_id))

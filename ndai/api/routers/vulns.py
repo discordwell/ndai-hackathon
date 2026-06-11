@@ -5,7 +5,6 @@ import json
 import logging
 import traceback
 import uuid
-from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -25,9 +24,9 @@ from ndai.db.repositories import (
     create_vuln_agreement,
     create_vuln_outcome,
     create_vulnerability,
-    get_vulnerability,
     get_vuln_agreement,
     get_vuln_outcome_by_agreement,
+    get_vulnerability,
     list_active_vulnerabilities,
     list_vuln_agreements_for_user,
     list_vulnerabilities_by_seller,

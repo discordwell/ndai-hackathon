@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import uuid
+from datetime import UTC
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -480,7 +481,7 @@ async def _run_verification(proposal_id: str):
                 # Auto-create verified marketplace listing on pass
                 if passed:
                     try:
-                        from datetime import datetime, timezone
+                        from datetime import datetime
                         target_result = await db.execute(
                             select(KnownTarget).where(KnownTarget.id == prop.target_id)
                         )
@@ -495,7 +496,7 @@ async def _run_verification(proposal_id: str):
                                 impact_type=prop.claimed_capability.upper(),
                                 cvss_self_assessed=7.0,
                                 asking_price_eth=prop.asking_price_eth,
-                                discovery_date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                                discovery_date=datetime.now(UTC).strftime("%Y-%m-%d"),
                                 anonymized_summary=(
                                     f"Verified {prop.claimed_capability.upper()} capability against "
                                     f"{t.display_name} v{t.current_version}. "
@@ -517,7 +518,7 @@ async def _run_verification(proposal_id: str):
                         if identity and not identity.has_badge:
                             identity.has_badge = True
                             identity.badge_type = "earned"
-                            identity.badge_awarded_at = datetime.now(timezone.utc)
+                            identity.badge_awarded_at = datetime.now(UTC)
                             logger.info("Awarded badge to %s on first verification pass", prop.seller_pubkey[:16])
                     except Exception as listing_err:
                         logger.exception("Failed to create listing/badge for proposal %s: %s", proposal_id, listing_err)
@@ -587,9 +588,10 @@ async def _run_simulated_verification(proposal_id, proposal, target, claimed_cap
 
     # If sealed_poc, decrypt using the simulated enclave keypair
     if proposal.sealed_poc and not proposal.poc_script:
+        from dataclasses import replace as _dc_replace
+
         from ndai.api.routers.enclave import _get_sim_state
         from ndai.enclave.ephemeral_keys import ecies_decrypt
-        from dataclasses import replace as _dc_replace
         from ndai.enclave.vuln_verify.models import PoCSpec
         sim_keypair, _ = _get_sim_state()
         poc_plaintext = ecies_decrypt(sim_keypair.private_key, proposal.sealed_poc)
@@ -604,9 +606,9 @@ async def _run_simulated_verification(proposal_id, proposal, target, claimed_cap
 
     await _emit_progress(proposal_id, "build_done", {"message": "Target specification ready."})
 
-    from ndai.enclave.vuln_verify.protocol import VulnVerificationProtocol
-    from ndai.enclave.vuln_verify.poc_executor import PoCExecutor
     from ndai.enclave.vuln_verify.oracles import OracleManager
+    from ndai.enclave.vuln_verify.poc_executor import PoCExecutor
+    from ndai.enclave.vuln_verify.protocol import VulnVerificationProtocol
 
     executor = PoCExecutor(enforce_rlimits=False)
     oracle = OracleManager()

@@ -20,7 +20,6 @@ import secrets
 import socket
 import stat
 import threading
-import time
 from dataclasses import dataclass, field
 
 from ndai.enclave.vuln_verify.models import (
@@ -222,7 +221,7 @@ class OracleManager:
                 else:
                     logger.info("Callback received from %s but token mismatch", addr)
                 conn.close()
-            except socket.timeout:
+            except TimeoutError:
                 logger.info("Callback listener timed out — no connection received")
             except Exception as exc:
                 logger.warning("Callback listener error: %s", exc)

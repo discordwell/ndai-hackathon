@@ -3,9 +3,18 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String, func
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy import LargeBinary, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ndai.models.user import Base

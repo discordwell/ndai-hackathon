@@ -7,10 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ndai.models.agreement import Agreement, AgreementOutcome
 from ndai.models.invention import Invention
-from ndai.models.user import User
 from ndai.models.rfp import BuyerRFP, RFPProposal
-from ndai.models.vulnerability import Vulnerability, VulnAgreement, VulnAgreementOutcome
-
+from ndai.models.user import User
+from ndai.models.vulnerability import VulnAgreement, VulnAgreementOutcome, Vulnerability
 
 # ── Users ──
 

@@ -207,7 +207,7 @@ async def stream_progress(
                     yield f"data: {json.dumps(event)}\n\n"
                     if event.get("event") in ("pipeline_complete", "pipeline_error"):
                         break
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield f"data: {json.dumps({'event': 'heartbeat'})}\n\n"
         finally:
             if agreement_id in _progress_queues:

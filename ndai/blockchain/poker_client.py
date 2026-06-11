@@ -10,7 +10,6 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from eth_account import Account
 from web3 import AsyncWeb3

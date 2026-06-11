@@ -9,7 +9,6 @@ script. The executor:
 """
 
 import asyncio
-import hashlib
 import http.server
 import logging
 import os
@@ -18,7 +17,6 @@ import socketserver
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any
 
 from ndai.enclave.vuln_verify.models import (
     CapabilityLevel,
@@ -206,7 +204,7 @@ class BrowserExecutor:
                     timeout=timeout_sec,
                 )
                 timed_out = False
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 proc.kill()
                 stdout_bytes, stderr_bytes = await proc.communicate()
                 timed_out = True

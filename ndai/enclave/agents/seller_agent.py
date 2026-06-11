@@ -16,7 +16,6 @@ from ndai.enclave.agents.base_agent import (
 from ndai.enclave.agents.llm_client import LLMClient
 from ndai.enclave.agents.sanitize import escape_for_prompt, wrap_user_data
 
-
 SELLER_TOOLS = [
     {
         "name": "make_disclosure",

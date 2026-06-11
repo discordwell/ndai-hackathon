@@ -12,10 +12,8 @@ import asyncio
 import hashlib
 import json
 import logging
-import os
 import shutil
-import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ndai.enclave.vuln_verify.models import (
@@ -173,7 +171,7 @@ ENTRYPOINT ["python3.11", "-m", "ndai.enclave.app"]
                 base_image=spec.base_image,
                 package_count=len(spec.packages),
                 docker_image_hash=docker_hash,
-                built_at=datetime.now(timezone.utc).isoformat(),
+                built_at=datetime.now(UTC).isoformat(),
             )
 
             # Cache manifest

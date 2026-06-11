@@ -8,7 +8,6 @@ it from interfering with the enclave runtime.
 import logging
 import os
 import resource
-import signal
 import subprocess
 import tempfile
 import time

@@ -12,6 +12,10 @@ import json
 import logging
 import time
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cryptography import x509
 
 logger = logging.getLogger(__name__)
 
@@ -319,8 +323,8 @@ def _verify_cose_signature(
     import cbor2
     from cryptography import x509
     from cryptography.exceptions import InvalidSignature
-    from cryptography.hazmat.primitives.asymmetric import ec
     from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec
 
     from ndai.tee.nitro_root_cert import get_root_certificate
 
@@ -398,10 +402,9 @@ def _verify_cert_chain(
     import datetime
 
     from cryptography.exceptions import InvalidSignature
-    from cryptography.hazmat.primitives.asymmetric import ec, rsa, padding
-    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
 
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
 
     # Verify first cert is signed by the root
     issuer_cert = root_cert

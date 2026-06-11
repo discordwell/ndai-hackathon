@@ -105,8 +105,8 @@ class WindowsVerifier:
             if progress_callback:
                 await progress_callback("verifying", {"message": "Planting canaries and running PoC..."})
 
-            # Plant canaries
-            ace_canary = secrets.token_hex(16)
+            # Plant canaries. The ACE canary file starts empty — the PoC proves
+            # arbitrary code execution by writing any content to it.
             lpe_canary = secrets.token_hex(16)
             canary_script = f"""
 New-Item -ItemType Directory -Force -Path C:\\canary
@@ -127,7 +127,7 @@ New-Item -ItemType File -Force -Path C:\\canary\\canary_ace.txt
             )
 
             # Check canaries
-            check_script = f"""
+            check_script = """
 $aceContent = Get-Content -Path C:\\canary\\canary_ace.txt -ErrorAction SilentlyContinue
 Write-Output "ACE_CANARY=$aceContent"
 """

@@ -33,7 +33,6 @@ import logging
 import socket
 import struct
 import sys
-import traceback
 from dataclasses import asdict
 from typing import Any
 
@@ -146,7 +145,6 @@ class EnclaveNegotiationSession(NegotiationSession):
             logger.info("Using TunnelOpenAILLMClient (end-to-end encrypted)")
             from ndai.enclave.tunnel_llm_client import TunnelOpenAILLMClient
 
-            llm_provider = config.llm_provider if hasattr(config, "llm_provider") else "openai"
             model = config.llm_model if hasattr(config, "llm_model") else config.anthropic_model
             return TunnelOpenAILLMClient(api_key=_state.api_key, model=model)
 
@@ -367,7 +365,7 @@ def _handle_negotiate(request: dict[str, Any]) -> dict[str, Any]:
     try:
         session = EnclaveNegotiationSession(config)
         result = session.run()
-    except Exception as exc:
+    except Exception:
         logger.exception("Negotiation failed")
         return {
             "status": "error",
@@ -442,8 +440,13 @@ def _handle_vuln_verify(request: dict[str, Any]) -> dict[str, Any]:
     """Run PoC verification against the target software in this enclave."""
     try:
         from ndai.enclave.vuln_verify.models import (
-            CapabilityLevel, ClaimedCapability,
-            ConfigFile, ExpectedOutcome, PinnedPackage, PoCSpec, ServiceSpec, TargetSpec,
+            CapabilityLevel,
+            ClaimedCapability,
+            ConfigFile,
+            PinnedPackage,
+            PoCSpec,
+            ServiceSpec,
+            TargetSpec,
         )
         from ndai.enclave.vuln_verify.overlay_handler import OverlayHandler
         from ndai.enclave.vuln_verify.protocol import VulnVerificationProtocol
@@ -558,6 +561,7 @@ def _handle_deliver_sealed_poc(request: dict[str, Any]) -> dict[str, Any]:
     """Receive an ECIES-encrypted PoC, decrypt inside the enclave, store for next vuln_verify."""
     try:
         import base64
+
         from ndai.enclave.ephemeral_keys import ecies_decrypt
 
         sealed_data = request.get("sealed_poc")
@@ -689,6 +693,7 @@ def _handle_deliver_key(request: dict[str, Any]) -> dict[str, Any]:
 
     try:
         import base64
+
         from ndai.enclave.ephemeral_keys import decrypt_api_key
 
         encrypted_payload = base64.b64decode(encrypted_b64)

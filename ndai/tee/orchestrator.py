@@ -230,9 +230,10 @@ class EnclaveOrchestrator:
             )
 
             if config.blockchain_enabled:
-                from ndai.blockchain.escrow_client import EscrowClient
                 import hashlib
                 import json as _json
+
+                from ndai.blockchain.escrow_client import EscrowClient
                 pcr0_bytes = attestation.pcrs.get(0, "0" * 96)[:64].encode().ljust(32, b'\0')[:32]
                 outcome_bytes = hashlib.sha256(_json.dumps({"outcome": stripped.outcome.value, "price": stripped.final_price}).encode()).digest()
                 att_hash = EscrowClient.compute_attestation_hash(pcr0_bytes, nonce, outcome_bytes)

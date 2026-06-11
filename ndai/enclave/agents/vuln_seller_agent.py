@@ -17,7 +17,6 @@ from ndai.enclave.agents.llm_client import LLMClient
 from ndai.enclave.agents.sanitize import escape_for_prompt, wrap_user_data
 from ndai.enclave.negotiation.shelf_life import disclosure_to_fraction
 
-
 VULN_SELLER_TOOLS = [
     {
         "name": "make_vuln_disclosure",

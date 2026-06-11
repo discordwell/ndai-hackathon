@@ -10,7 +10,7 @@ import time
 from typing import Any
 
 from ndai.enclave.poker.deck import deal, shuffle_deck
-from ndai.enclave.poker.evaluator import evaluate_hand, best_hand_cards
+from ndai.enclave.poker.evaluator import best_hand_cards, evaluate_hand
 from ndai.enclave.poker.state import (
     Card,
     HandPhase,
@@ -425,7 +425,6 @@ def _advance_phase(table: TableState) -> list[dict]:
     # Collect bets into pots
     _collect_bets_into_pots(table)
 
-    active = hand.active_players(table.seats)
     can_act = hand.players_who_can_act(table.seats)
 
     # If only 0 or 1 player can still act, run out remaining community cards

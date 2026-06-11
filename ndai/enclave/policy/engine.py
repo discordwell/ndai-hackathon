@@ -8,7 +8,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 @dataclass
@@ -42,7 +42,7 @@ class Policy:
     """A complete policy: task type + list of constraints + metadata."""
     task_type: str
     constraints: list[PolicyConstraint]
-    generated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    generated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     context_summary: str = ""
 
 

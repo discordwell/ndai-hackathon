@@ -14,7 +14,6 @@ from ndai.api.dependencies import get_current_user
 from ndai.api.schemas.agreement import NegotiationOutcomeResponse
 from ndai.api.schemas.transparency import AuditLogEntry, TransparencyReport
 from ndai.config import settings
-from ndai.services.audit import get_audit_log, log_event
 from ndai.db.repositories import (
     create_outcome,
     get_agreement,
@@ -25,6 +24,7 @@ from ndai.db.repositories import (
 from ndai.db.session import async_session, get_db
 from ndai.enclave.agents.base_agent import InventionSubmission
 from ndai.enclave.negotiation.engine import SecurityParams
+from ndai.services.audit import get_audit_log, log_event
 from ndai.tee.orchestrator import EnclaveNegotiationConfig, EnclaveOrchestrator
 
 router = APIRouter()

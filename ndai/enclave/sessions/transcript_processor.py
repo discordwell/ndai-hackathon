@@ -42,7 +42,7 @@ class TranscriptProcessingSession:
         self.config = config
 
     def run(self) -> TranscriptResult:
-        from ndai.enclave.egress import EgressAwareLLMClient, EgressLog
+        from ndai.enclave.egress import EgressLog
         from ndai.enclave.policy.engine import enforce_all, hash_policy
         from ndai.enclave.policy.generator import generate_policy
         from ndai.enclave.verification import SessionVerificationChain

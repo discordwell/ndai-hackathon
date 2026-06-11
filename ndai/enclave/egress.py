@@ -7,8 +7,8 @@ Wraps existing LLM clients to intercept create_message() calls.
 import hashlib
 import json
 import logging
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -95,7 +95,7 @@ class EgressAwareLLMClient:
         response_hash = _sha256_of(response_str)
 
         self._log.record(EgressEntry(
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             endpoint=endpoint,
             method="POST",
             request_bytes=request_bytes,

@@ -7,7 +7,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select, or_
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ndai.api.dependencies import decode_zk_token, get_zk_identity
@@ -16,13 +16,12 @@ from ndai.api.schemas.zk_vulnerability import (
     ZKVulnAgreementResponse,
     ZKVulnCreateRequest,
     ZKVulnListingResponse,
-    ZKVulnOutcomeResponse,
     ZKVulnResponse,
     ZKWalletConnectRequest,
 )
 from ndai.db.session import get_db
 from ndai.models.zk_identity import VulnIdentity
-from ndai.models.zk_vulnerability import ZKVulnAgreement, ZKVulnOutcome, ZKVulnerability
+from ndai.models.zk_vulnerability import ZKVulnAgreement, ZKVulnerability
 
 router = APIRouter(prefix="", tags=["zk-vulnerabilities"])
 logger = logging.getLogger(__name__)

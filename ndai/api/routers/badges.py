@@ -1,7 +1,7 @@
 """Badge system — ⚡ verified seller badges."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -60,7 +60,7 @@ async def purchase_badge(
     identity.has_badge = True
     identity.badge_type = "purchased"
     identity.badge_tx_hash = request.tx_hash
-    identity.badge_awarded_at = datetime.now(timezone.utc)
+    identity.badge_awarded_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(identity)
 

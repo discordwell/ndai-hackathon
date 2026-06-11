@@ -7,8 +7,8 @@ human-readable attestation claims and a tamper-evident final hash.
 import hashlib
 import json
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -86,7 +86,7 @@ class SessionVerificationChain:
 
         event = VerificationEvent(
             event_type=event_type,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             data_hash=data_hash,
             description=description,
         )

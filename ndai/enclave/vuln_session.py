@@ -9,13 +9,18 @@ Runs inside the TEE (or simulated TEE). Wires together:
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from ndai.enclave.agents.base_agent import AgentMessage, AgentRole, VulnDisclosure, VulnerabilitySubmission
+from ndai.enclave.agents.base_agent import (
+    AgentMessage,
+    AgentRole,
+    VulnDisclosure,
+    VulnerabilitySubmission,
+)
+from ndai.enclave.agents.llm_client import LLMClient
 from ndai.enclave.agents.vuln_buyer_agent import VulnBuyerAgent
 from ndai.enclave.agents.vuln_seller_agent import VulnSellerAgent
-from ndai.enclave.agents.llm_client import LLMClient
 from ndai.enclave.negotiation.shelf_life import (
     ShelfLifeParams,
     VulnNegotiationResult,
@@ -310,8 +315,8 @@ class VulnNegotiationSession:
         try:
             disc = datetime.fromisoformat(discovery_date.replace("Z", "+00:00"))
             if disc.tzinfo is None:
-                disc = disc.replace(tzinfo=timezone.utc)
-            delta = datetime.now(timezone.utc) - disc
+                disc = disc.replace(tzinfo=UTC)
+            delta = datetime.now(UTC) - disc
             return max(delta.total_seconds() / 86400.0, 0.0)
         except (ValueError, TypeError):
             return 0.0

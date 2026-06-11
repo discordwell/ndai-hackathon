@@ -1,7 +1,7 @@
 """TEE session for Conditional Recall credential proxy."""
 
 import logging
-from dataclasses import dataclass, field as dataclass_field
+from dataclasses import dataclass
 from typing import Any
 
 from ndai.enclave.agents.sanitize import wrap_user_data
@@ -36,7 +36,7 @@ class SecretProxySession:
         self.config = config
 
     def run(self) -> SecretProxyResult:
-        from ndai.enclave.egress import EgressAwareLLMClient, EgressLog
+        from ndai.enclave.egress import EgressLog
         from ndai.enclave.policy.engine import enforce_all, hash_policy
         from ndai.enclave.policy.generator import generate_policy
         from ndai.enclave.verification import SessionVerificationChain

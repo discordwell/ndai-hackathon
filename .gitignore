@@ -36,3 +36,5 @@ contracts/cache/
 .worktrees/
 .superpowers/
 scripts/mind_address.py
+# Separate reference checkout of the NDAI ecosystem repo (has its own .git)
+dnai-wikigen/

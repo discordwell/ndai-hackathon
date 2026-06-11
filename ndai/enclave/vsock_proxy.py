@@ -125,7 +125,7 @@ class VsockProxy:
         self._server_sock.settimeout(1.0)
         try:
             return self._server_sock.accept()
-        except socket.timeout as exc:
+        except TimeoutError as exc:
             raise TimeoutError from exc
 
     async def _handle_connection(

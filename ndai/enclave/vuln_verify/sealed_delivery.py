@@ -24,7 +24,6 @@ import os
 from dataclasses import dataclass
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
 from cryptography.hazmat.primitives.serialization import load_der_public_key
 
 from ndai.enclave.ephemeral_keys import ecies_decrypt, ecies_encrypt
@@ -143,9 +142,9 @@ def unseal_delivery(
     Returns:
         exploit_plaintext
     """
+    from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.asymmetric import ec
     from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-    from cryptography.hazmat.primitives import hashes
 
     # Manually decrypt ECIES (same scheme as ephemeral_keys.py)
     # Format: [ephemeral_pubkey_DER | nonce(12) | ciphertext+tag(16)]

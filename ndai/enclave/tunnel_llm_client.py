@@ -20,9 +20,12 @@ This module provides:
 import logging
 import socket
 import ssl
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
+
+if TYPE_CHECKING:
+    import openai
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +74,7 @@ class TunnelConnection:
             raise TunnelError(f"Failed to connect to tunnel: {exc}") from exc
 
         # Step 2: Send CONNECT request
-        connect_line = f"CONNECT {self.host}:{self.port}\n".encode("utf-8")
+        connect_line = f"CONNECT {self.host}:{self.port}\n".encode()
         try:
             vsock.sendall(connect_line)
         except OSError as exc:

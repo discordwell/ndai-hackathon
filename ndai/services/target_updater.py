@@ -1,7 +1,7 @@
 """Target auto-updater — checks upstream release feeds and updates KnownTarget versions."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -94,7 +94,7 @@ class TargetUpdater:
             return None
 
         # Record the check timestamp regardless of whether the version changed
-        target.last_version_check = datetime.now(timezone.utc)
+        target.last_version_check = datetime.now(UTC)
 
         if latest_version == target.current_version:
             logger.debug("Target %s is current at %s", target.slug, target.current_version)

@@ -7,10 +7,7 @@ Both must be validated before use.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from enum import Enum
-from uuid import uuid4
-
 
 # ---------------------------------------------------------------------------
 # Seller-provided target specification

@@ -15,10 +15,7 @@ from ndai.enclave.vuln_verify.models import (
     BuyerOverlay,
     CapabilityLevel,
     ClaimedCapability,
-    ConfigFile,
-    PinnedPackage,
     PoCSpec,
-    ServiceSpec,
     TargetSpec,
 )
 

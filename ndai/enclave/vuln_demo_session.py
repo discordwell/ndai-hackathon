@@ -10,8 +10,9 @@ Each phase emits progress events via the callback for SSE streaming.
 """
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 from ndai.enclave.agents.base_agent import VulnerabilitySubmission
 from ndai.enclave.negotiation.shelf_life import VulnNegotiationResult

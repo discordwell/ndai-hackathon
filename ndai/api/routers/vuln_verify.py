@@ -80,6 +80,7 @@ async def get_target_spec(
     db: AsyncSession = Depends(get_db),
 ):
     from sqlalchemy import select
+
     from ndai.models.vuln_verify import TargetSpecRecord
 
     result = await db.execute(
@@ -111,6 +112,7 @@ async def trigger_eif_build(
 ):
     """Trigger an async EIF build for a target spec."""
     from sqlalchemy import select
+
     from ndai.models.vuln_verify import TargetSpecRecord
 
     if spec_id in _build_statuses and _build_statuses[spec_id].get("status") == "building":
@@ -129,7 +131,12 @@ async def trigger_eif_build(
         try:
             from ndai.enclave.vuln_verify.builder import EIFBuilder
             from ndai.enclave.vuln_verify.models import (
-                ConfigFile, ExpectedOutcome, PinnedPackage, PoCSpec, ServiceSpec, TargetSpec,
+                ConfigFile,
+                ExpectedOutcome,
+                PinnedPackage,
+                PoCSpec,
+                ServiceSpec,
+                TargetSpec,
             )
 
             spec = TargetSpec(
@@ -187,6 +194,7 @@ async def get_manifest(
     db: AsyncSession = Depends(get_db),
 ):
     from sqlalchemy import select
+
     from ndai.models.vuln_verify import EIFManifestRecord
 
     result = await db.execute(
@@ -252,8 +260,9 @@ async def start_verification(
     if agreement_id in _verify_statuses and _verify_statuses[agreement_id].get("status") in ("pending", "running"):
         return {"status": _verify_statuses[agreement_id]["status"]}
 
-    from ndai.db.repositories import get_vuln_agreement, get_vulnerability
     from sqlalchemy import select
+
+    from ndai.db.repositories import get_vuln_agreement
     from ndai.models.vuln_verify import TargetSpecRecord
 
     agreement = await get_vuln_agreement(db, uuid.UUID(agreement_id))
@@ -279,9 +288,14 @@ async def start_verification(
             _verify_statuses[agreement_id] = {"status": "running"}
 
             from ndai.enclave.vuln_verify.models import (
-                ConfigFile, ExpectedOutcome, PinnedPackage, PoCSpec, ServiceSpec, TargetSpec,
+                ConfigFile,
+                ExpectedOutcome,
+                PinnedPackage,
+                PoCSpec,
+                ServiceSpec,
+                TargetSpec,
             )
-            from ndai.tee.vuln_verify_orchestrator import VulnVerifyOrchestrator, VerificationConfig
+            from ndai.tee.vuln_verify_orchestrator import VerificationConfig, VulnVerifyOrchestrator
 
             spec = TargetSpec(
                 spec_id=str(spec_record.id),
@@ -361,6 +375,7 @@ async def get_verification_result(
 
     # Fall back to DB
     from sqlalchemy import select
+
     from ndai.models.vuln_verify import VerificationResultRecord
 
     result = await db.execute(

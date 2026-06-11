@@ -22,7 +22,6 @@ import ctypes.util
 import fcntl
 import logging
 import os
-import struct
 from typing import Any
 
 import cbor2

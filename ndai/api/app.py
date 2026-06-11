@@ -10,7 +10,31 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from ndai.api.routers import agreements, auth, badges, bounties, buyer_delivery, enclave, inventions, messaging, negotiations, poker, proposals, rfps, secrets, serious_customer, targets, transcripts, vulns, vuln_verify, vuln_demo, delivery, zk_auth, zk_auctions, zk_vulns
+from ndai.api.routers import (
+    agreements,
+    auth,
+    badges,
+    bounties,
+    buyer_delivery,
+    delivery,
+    enclave,
+    inventions,
+    messaging,
+    negotiations,
+    poker,
+    proposals,
+    rfps,
+    secrets,
+    serious_customer,
+    targets,
+    transcripts,
+    vuln_demo,
+    vuln_verify,
+    vulns,
+    zk_auctions,
+    zk_auth,
+    zk_vulns,
+)
 
 _frontend_override = os.environ.get("FRONTEND_DIR", "")
 FRONTEND_DIST = Path(_frontend_override) if _frontend_override else Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
@@ -57,7 +81,7 @@ def create_app() -> FastAPI:
         return response
 
     if settings.privacy_mode:
-        from ndai.api.middleware.privacy import PrivacyMiddleware, CSPMiddleware
+        from ndai.api.middleware.privacy import CSPMiddleware, PrivacyMiddleware
         app.add_middleware(PrivacyMiddleware)
         app.add_middleware(CSPMiddleware)
 

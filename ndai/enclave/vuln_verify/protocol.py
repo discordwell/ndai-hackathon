@@ -13,14 +13,13 @@ must output the canary value to prove the claim.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ndai.enclave.verification import SessionVerificationChain
 from ndai.enclave.vuln_verify.models import (
     BuyerOverlay,
     CapabilityLevel,
     CapabilityResult,
-    PoCResult,
     TargetSpec,
     VerificationResult,
 )
@@ -156,7 +155,7 @@ class VulnVerificationProtocol:
             patched_capability=patched_cap,
             overlap_detected=overlap_detected,
             verification_chain_hash=report.final_hash,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
         )
 
     def _run_with_oracles(

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ndai.api.dependencies import get_zk_identity
 from ndai.db.session import get_db
-from ndai.models.zk_vulnerability import ZKVulnerability, ZKVulnAgreement
+from ndai.models.zk_vulnerability import ZKVulnerability
 
 router = APIRouter(prefix="", tags=["buyer-delivery"])
 logger = logging.getLogger(__name__)
@@ -75,7 +75,6 @@ async def request_delivery(
         raise HTTPException(status_code=400, detail="No PoC available for delivery")
 
     # Get the PoC plaintext (in simulated mode, decrypt sealed_poc; in nitro, route to enclave)
-    from ndai.config import settings
     if proposal.sealed_poc:
         from ndai.api.routers.enclave import _get_sim_state
         from ndai.enclave.ephemeral_keys import ecies_decrypt

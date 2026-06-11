@@ -57,7 +57,7 @@ class NSMStub:
             x509.NameAttribute(NameOID.COMMON_NAME, "NDAI Test NSM"),
             x509.NameAttribute(NameOID.ORGANIZATION_NAME, "NDAI Test"),
         ])
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         cert = (
             x509.CertificateBuilder()
             .subject_name(subject)

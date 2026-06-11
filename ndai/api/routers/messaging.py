@@ -10,30 +10,30 @@ import asyncio
 import hashlib
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select, func, and_, or_, update
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ndai.api.dependencies import get_zk_identity, decode_zk_token
+from ndai.api.dependencies import decode_zk_token, get_zk_identity
 from ndai.api.schemas.messaging import (
-    PrekeyBundleUpload,
-    PrekeyBundleResponse,
-    OTPKResponse,
-    PrekeyStatusResponse,
     ConversationCreate,
     ConversationResponse,
-    MessageSend,
     MessageResponse,
+    MessageSend,
+    OTPKResponse,
+    PrekeyBundleResponse,
+    PrekeyBundleUpload,
+    PrekeyStatusResponse,
 )
 from ndai.db.session import get_db
 from ndai.models.messaging import (
-    MessagingPrekey,
-    MessagingOTPK,
     MessagingConversation,
     MessagingMessage,
+    MessagingOTPK,
+    MessagingPrekey,
 )
 
 router = APIRouter()
@@ -75,7 +75,7 @@ async def upload_prekeys(
         prekey.signed_prekey_pub = body.signed_prekey_pub
         prekey.signed_prekey_sig = body.signed_prekey_sig
         prekey.signed_prekey_id = body.signed_prekey_id
-        prekey.updated_at = datetime.now(timezone.utc)
+        prekey.updated_at = datetime.now(UTC)
     else:
         prekey = MessagingPrekey(
             owner_pubkey=pubkey,
@@ -107,7 +107,7 @@ async def prekey_status(
     count_result = await db.execute(
         select(func.count()).select_from(MessagingOTPK).where(and_(
             MessagingOTPK.owner_pubkey == pubkey,
-            MessagingOTPK.consumed == False,
+            MessagingOTPK.consumed.is_(False),
         ))
     )
     remaining = count_result.scalar() or 0
@@ -118,7 +118,7 @@ async def prekey_status(
     prekey = prekey_result.scalar_one_or_none()
     age_hours = 0.0
     if prekey and prekey.updated_at:
-        delta = datetime.now(timezone.utc) - prekey.updated_at.replace(tzinfo=timezone.utc)
+        delta = datetime.now(UTC) - prekey.updated_at.replace(tzinfo=UTC)
         age_hours = delta.total_seconds() / 3600
 
     return PrekeyStatusResponse(remaining_otpks=remaining, signed_prekey_age_hours=age_hours)
@@ -143,7 +143,7 @@ async def fetch_prekeys(
         select(MessagingOTPK)
         .where(and_(
             MessagingOTPK.owner_pubkey == peer_pubkey,
-            MessagingOTPK.consumed == False,
+            MessagingOTPK.consumed.is_(False),
         ))
         .order_by(MessagingOTPK.otpk_index)
         .limit(1)
@@ -292,7 +292,7 @@ async def get_messages(
     if not conv or pubkey not in (conv.participant_a, conv.participant_b):
         raise HTTPException(status_code=403, detail="Not a participant")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     query = (
         select(MessagingMessage)
         .where(and_(
@@ -337,7 +337,7 @@ async def send_message(
     )
     message_index = count_result.scalar() or 0
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     msg = MessagingMessage(
         conversation_id=conv_uuid,
         sender_pubkey=pubkey,
@@ -426,14 +426,14 @@ async def message_stream(
                         "created_at": msg.created_at.isoformat(),
                     }
                     yield f"event: new_message\ndata: {json.dumps(data)}\n\n"
-                    msg.delivered_at = datetime.now(timezone.utc)
+                    msg.delivered_at = datetime.now(UTC)
                 await db.commit()
 
                 # Check prekey status
                 otpk_count = await db.execute(
                     select(func.count()).select_from(MessagingOTPK).where(and_(
                         MessagingOTPK.owner_pubkey == pubkey,
-                        MessagingOTPK.consumed == False,
+                        MessagingOTPK.consumed.is_(False),
                     ))
                 )
                 remaining = otpk_count.scalar() or 0

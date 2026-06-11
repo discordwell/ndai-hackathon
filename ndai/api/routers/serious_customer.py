@@ -1,7 +1,7 @@
 """Serious Customer deposit and status endpoints."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -65,7 +65,7 @@ async def register_sc_deposit(
     identity.sc_deposit_tx_hash = request.tx_hash
     identity.sc_deposit_eth = request.deposit_eth
     identity.sc_eth_address = request.eth_address
-    identity.sc_awarded_at = datetime.now(timezone.utc)
+    identity.sc_awarded_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(identity)

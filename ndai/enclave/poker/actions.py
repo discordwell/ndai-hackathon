@@ -11,7 +11,6 @@ from typing import Any
 
 from ndai.enclave.poker.engine import (
     PokerEngineError,
-    get_valid_actions,
     process_action,
     process_timeout,
     start_hand,
@@ -50,7 +49,7 @@ def handle_poker_action(
     except PokerEngineError as exc:
         logger.warning("Poker engine error: %s", exc)
         return {"status": "error", "error": str(exc)}
-    except Exception as exc:
+    except Exception:
         logger.exception("Unexpected poker error")
         return {"status": "error", "error": "Internal poker error"}
 
