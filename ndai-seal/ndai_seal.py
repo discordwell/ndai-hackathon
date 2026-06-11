@@ -3,8 +3,10 @@
 Usage:
     ndai-seal attest https://api.zdayzk.com     # Fetch and display attestation
     ndai-seal encrypt --poc exploit.sh           # Encrypt PoC to enclave key
-    ndai-seal submit --sealed sealed.bin         # Submit to marketplace
     ndai-seal verify-pcr0 --pcr0 <hex>           # Check PCR0 against on-chain registry
+
+To submit the sealed ciphertext to the marketplace, use scripts/ndai_submit.py
+(handles auth, target selection, and polling for the verification result).
 """
 
 import base64
