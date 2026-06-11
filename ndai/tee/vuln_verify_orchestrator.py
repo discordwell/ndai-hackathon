@@ -179,11 +179,19 @@ class VulnVerifyOrchestrator:
             )
             logger.info("Attestation verified: pcr0=%s", attestation.pcrs.get(0, "?")[:16])
 
-            # Step 3: Deliver API key (if needed for LLM-assisted analysis)
+            # Step 3: Deliver API key (if needed for LLM-assisted analysis).
+            # ECIES-encrypt to the enclave's attestation-bound public key so the
+            # parent never holds a usable key. Fail closed if attestation carried
+            # no public key (mirrors the negotiation orchestrator's behavior).
             if config.api_key:
-                from ndai.enclave.ephemeral_keys import ecies_encrypt
-                encrypted_key = ecies_encrypt(
-                    attestation.enclave_public_key_der, config.api_key.encode()
+                if not attestation.enclave_public_key:
+                    raise VerificationOrchestrationError(
+                        "Attestation has no enclave public key. "
+                        "Cannot establish encrypted channel in Nitro mode."
+                    )
+                from ndai.enclave.ephemeral_keys import encrypt_api_key
+                encrypted_key = encrypt_api_key(
+                    attestation.enclave_public_key, config.api_key
                 )
                 await self._provider.send_message(identity.enclave_id, {
                     "action": "deliver_key",
