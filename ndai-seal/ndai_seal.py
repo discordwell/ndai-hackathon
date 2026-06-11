@@ -16,10 +16,10 @@ import sys
 
 import click
 import httpx
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives import hashes, serialization
 
 # ECIES constants (must match ndai/enclave/ephemeral_keys.py)
 ECIES_INFO = b"ndai-key-delivery"
@@ -139,7 +139,7 @@ def encrypt(poc, key, out):
 
     click.echo(f"Sealed: {len(sealed)} bytes -> {out}")
     click.echo(f"SHA-256: {hashlib.sha256(sealed).hexdigest()}")
-    click.echo(f"\nYour PoC is encrypted. Only the attested enclave can decrypt it.")
+    click.echo("\nYour PoC is encrypted. Only the attested enclave can decrypt it.")
 
 
 @cli.command("verify-pcr0")
@@ -157,13 +157,8 @@ def verify_pcr0(pcr0, registry, rpc):
     click.echo(f"PCR0: {pcr0[:32]}...{pcr0[-8:]}")
     click.echo(f"Registry: {registry}")
 
-    # Call verifyPCR0(bytes32, bytes16) via eth_call
-    high = pcr0[:64]
-    low = pcr0[64:]
-
-    # Call getPCR0() to get the current on-chain PCR0
-    # Function selector for getPCR0(): 0x93237378
-    # (computed via cast sig "getPCR0()")
+    # Call getPCR0() and compare the returned value client-side.
+    # Function selector for getPCR0() = keccak256("getPCR0()")[:4] = 0x94237378
     data_get = "0x94237378"
 
     resp = httpx.post(rpc, json={
@@ -191,10 +186,10 @@ def verify_pcr0(pcr0, registry, rpc):
     click.echo(f"On-chain PCR0: {onchain_pcr0[:32]}...{onchain_pcr0[-8:]}")
 
     if pcr0 == onchain_pcr0:
-        click.echo(f"\nMATCH — PCR0 matches on-chain registry")
+        click.echo("\nMATCH — PCR0 matches on-chain registry")
         click.echo("The enclave is running the published, auditable code.")
     else:
-        click.echo(f"\nMISMATCH")
+        click.echo("\nMISMATCH")
         click.echo(f"  Your PCR0:    {pcr0[:32]}...")
         click.echo(f"  On-chain:     {onchain_pcr0[:32]}...")
         click.echo("WARNING: The enclave may be running modified code.", err=True)
