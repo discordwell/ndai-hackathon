@@ -211,10 +211,16 @@ class TestMultiRound:
         assert result.negotiation_rounds == 3
 
     def test_budget_cap_clamps_buyer_offer(self, invention, security_params):
-        """Buyer's offer is clamped to budget cap."""
+        """Buyer's offer is clamped down to the budget cap.
+
+        The buyer's mock wants to offer 0.4, but budget_cap=0.3 clamps it to 0.3.
+        That clamped offer is still above the seller's acceptance floor
+        (alpha_0 * omega_hat = 0.3 * 0.675 = 0.2025), so the seller accepts and
+        the final price equals the budget cap.
+        """
         config = SessionConfig(
             invention=invention,
-            budget_cap=0.01,  # Very low — buyer's offer clamped to 0.01
+            budget_cap=0.3,  # below the buyer's intended 0.4 offer → clamps to 0.3
             security_params=security_params,
             max_rounds=5,
             anthropic_api_key="test-key",
@@ -229,7 +235,6 @@ class TestMultiRound:
         session.buyer_agent.llm = llm
 
         result = session.run()
-        # Buyer's make_offer clamps proposed_price to budget_cap=0.01
-        # Seller accepts 0.01, which is within budget
+        # make_offer clamps proposed_price (0.4) down to budget_cap (0.3).
         assert result.outcome == NegotiationOutcomeType.AGREEMENT
-        assert result.final_price == pytest.approx(0.01)
+        assert result.final_price == pytest.approx(0.3)

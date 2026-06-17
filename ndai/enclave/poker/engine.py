@@ -504,6 +504,47 @@ def _run_out_board(table: TableState) -> list[dict]:
 # Pot management
 # ---------------------------------------------------------------------------
 
+def _return_uncalled_bets(table: TableState) -> list[dict[str, Any]]:
+    """Return uncalled over-bets to their contributors before pots are built.
+
+    A wager is "uncalled" when it exceeds the largest total put in by any player
+    still eligible to win the pot (i.e. still active at showdown). Such excess can
+    only come from folded players who over-bet beyond what any contesting player
+    matched. In real poker the uncalled portion is returned to the bettor; if it
+    isn't, ``_collect_bets_into_pots`` builds a top side pot whose only
+    contributors are folded — leaving ``eligible_players`` empty — and
+    ``_showdown`` then drops that pot, destroying chips (a zero-sum violation).
+
+    Called immediately before pot collection at hand resolution. Because the cap
+    lowers ``total_bet_this_hand`` to the max callable level, re-running it is a
+    no-op (idempotent), so it is safe alongside the per-street collections.
+    """
+    hand = table.hand
+    assert hand is not None
+
+    active_totals = [
+        s.total_bet_this_hand
+        for s in table.seats
+        if s is not None and s.is_active and not s.is_sitting_out
+    ]
+    if not active_totals:
+        return []
+
+    max_callable = max(active_totals)
+    events: list[dict[str, Any]] = []
+    for s in table.seats:
+        if s is None:
+            continue
+        excess = s.total_bet_this_hand - max_callable
+        if excess > 0:
+            s.stack += excess
+            s.total_bet_this_hand = max_callable
+            events.append(
+                _event("uncalled_bet_returned", seat=s.seat_index, amount=excess)
+            )
+    return events
+
+
 def _collect_bets_into_pots(table: TableState) -> None:
     """Collect current bets into main pot and side pots."""
     hand = table.hand
@@ -577,7 +618,10 @@ def _showdown(table: TableState) -> list[dict]:
     hand.phase = HandPhase.SHOWDOWN
     events: list[dict] = []
 
-    # Final pot collection
+    # Return uncalled over-bets, then build the final pots. Without the return,
+    # a side pot above the highest active all-in has no eligible winner and is
+    # silently dropped below, destroying those chips.
+    events.extend(_return_uncalled_bets(table))
     _collect_bets_into_pots(table)
 
     active = hand.active_players(table.seats)
@@ -657,14 +701,17 @@ def _end_hand_last_standing(table: TableState, winner: PlayerSeat) -> list[dict]
     hand = table.hand
     assert hand is not None
 
-    # Collect remaining bets
+    # Return any uncalled over-bets, then collect the remaining bets. Otherwise a
+    # folded player's uncalled over-bet would be handed to the winner instead of
+    # returned to them.
+    events: list[dict[str, Any]] = _return_uncalled_bets(table)
     _collect_bets_into_pots(table)
 
     # Award all pots to winner
     total_won = sum(p.amount for p in hand.pots)
     winner.stack += total_won
 
-    events = [
+    events += [
         _event("hand_end",
                hand_number=hand.hand_number,
                winner_seat=winner.seat_index,

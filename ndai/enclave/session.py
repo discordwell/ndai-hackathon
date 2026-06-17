@@ -220,10 +220,7 @@ class NegotiationSession:
                 self.transcript.messages.append(seller_response)
 
                 # Check seller's response
-                if seller_response.raw_response:
-                    action = seller_response.raw_response.get("input", {}).get("action", "accept")
-                else:
-                    action = "accept"
+                action = self._seller_action(seller_response)
 
                 self._emit_progress("round", {"number": round_num, "phase": "seller_response", "action": action, "message": f"Round {round_num}: Seller {action}s the offer", "done": True})
                 logger.info(f"Round {round_num}: Seller action={action}")
@@ -276,6 +273,24 @@ class NegotiationSession:
         self.transcript.result = result
         logger.info(f"Negotiation complete: {result.outcome.value} in {rounds_completed} rounds")
         return result
+
+    @staticmethod
+    def _seller_action(seller_response: AgentMessage) -> str:
+        """Derive the seller's action (accept/counter/reject) from its message.
+
+        The LLM path records the chosen action in ``raw_response``. The hard-floor
+        guard in ``SellerAgent.evaluate_offer`` short-circuits below-floor offers
+        WITHOUT calling the LLM: it returns a counter-at-floor message with
+        ``raw_response=None`` and a ``price_proposal`` at the acceptance floor.
+        That must be read as a counter — never an accept — otherwise a below-floor
+        price would be silently accepted as the final deal price, violating the
+        seller's documented acceptance threshold (P >= alpha_0 * omega_hat).
+        """
+        if seller_response.raw_response:
+            return str(seller_response.raw_response.get("input", {}).get("action", "accept"))
+        if seller_response.price_proposal is not None:
+            return "counter"
+        return "accept"
 
     def _no_deal_result(
         self, omega_hat: float, v_b: float, reason: str, rounds: int = 1

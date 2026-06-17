@@ -41,7 +41,10 @@ class OverlayHandler:
             raise OverlayError("No keypair available for decryption")
 
         from ndai.enclave.ephemeral_keys import ecies_decrypt
-        plaintext = ecies_decrypt(self._keypair, encrypted_payload)
+        # ecies_decrypt expects the EC private key, not the EnclaveKeypair wrapper
+        # (it calls private_key.exchange(...) for ECDH). Every other call site
+        # passes .private_key; passing the dataclass here raised AttributeError.
+        plaintext = ecies_decrypt(self._keypair.private_key, encrypted_payload)
 
         # Decode CBOR to dict, then construct BuyerOverlay
         data = cbor2.loads(plaintext)

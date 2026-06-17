@@ -5,7 +5,7 @@ import tempfile
 
 import pytest
 
-from ndai.enclave.vuln_verify.models import BuyerOverlay, FileReplacement, ServiceSpec
+from ndai.enclave.vuln_verify.models import BuyerOverlay, FileReplacement
 from ndai.enclave.vuln_verify.overlay_handler import OverlayError, OverlayHandler
 
 
@@ -82,3 +82,35 @@ class TestOverlayHandler:
         handler = OverlayHandler(keypair=None)
         with pytest.raises(OverlayError, match="No keypair"):
             handler.decrypt_overlay(b"encrypted data")
+
+    def test_decrypt_overlay_roundtrip(self):
+        """ECIES round-trip: an overlay encrypted to the enclave key decrypts.
+
+        Regression for passing the EnclaveKeypair wrapper (instead of its
+        .private_key) to ecies_decrypt, which raised AttributeError and broke
+        every real-mode overlay decryption.
+        """
+        import cbor2
+
+        from ndai.enclave.ephemeral_keys import ecies_encrypt, generate_keypair
+
+        keypair = generate_keypair()
+        payload = cbor2.dumps(
+            {
+                "overlay_id": "ov-1",
+                "file_replacements": [{"path": "/usr/lib/libfoo.so", "content": b"patched"}],
+                "pre_apply_commands": ["service foo stop"],
+                "post_apply_commands": ["service foo start"],
+            }
+        )
+        encrypted = ecies_encrypt(keypair.public_key, payload)
+
+        handler = OverlayHandler(keypair=keypair)
+        overlay = handler.decrypt_overlay(encrypted)
+
+        assert overlay.overlay_id == "ov-1"
+        assert len(overlay.file_replacements) == 1
+        assert overlay.file_replacements[0].path == "/usr/lib/libfoo.so"
+        assert overlay.file_replacements[0].content == b"patched"
+        assert overlay.pre_apply_commands == ["service foo stop"]
+        assert overlay.post_apply_commands == ["service foo start"]
