@@ -31,6 +31,24 @@ _pending_overlays: dict[str, bytes] = {}  # agreement_id -> encrypted overlay
 _tasks: set[asyncio.Task] = set()
 
 
+def _claimed_capability_from_record(stored: dict | None):
+    """Rehydrate a ClaimedCapability dataclass from the JSONB persisted on a spec.
+
+    The seller submits a ClaimedCapabilitySchema (capability level, reliability runs,
+    and optional crash fields); it is stored as a plain dict and rebuilt here so the
+    enclave can independently verify the claim.
+    """
+    from ndai.enclave.vuln_verify.models import CapabilityLevel, ClaimedCapability
+
+    stored = stored or {}
+    return ClaimedCapability(
+        level=CapabilityLevel(stored.get("level", CapabilityLevel.CRASH.value)),
+        crash_signal=stored.get("crash_signal"),
+        exit_code=stored.get("exit_code"),
+        reliability_runs=stored.get("reliability_runs", 3),
+    )
+
+
 @router.post("/target-specs", response_model=TargetSpecResponse, status_code=201)
 async def create_target_spec(
     request: TargetSpecCreateRequest,
@@ -57,7 +75,7 @@ async def create_target_spec(
         config_files=[c.model_dump() for c in request.config_files],
         services=[s.model_dump() for s in request.services],
         poc_hash=poc_hash,
-        expected_outcome=request.expected_outcome.model_dump(),
+        claimed_capability=request.claimed_capability.model_dump(),
         status="pending",
     )
     db.add(record)
@@ -132,7 +150,6 @@ async def trigger_eif_build(
             from ndai.enclave.vuln_verify.builder import EIFBuilder
             from ndai.enclave.vuln_verify.models import (
                 ConfigFile,
-                ExpectedOutcome,
                 PinnedPackage,
                 PoCSpec,
                 ServiceSpec,
@@ -146,7 +163,7 @@ async def trigger_eif_build(
                 config_files=[ConfigFile(**c) for c in (record.config_files or [])],
                 services=[ServiceSpec(**s) for s in (record.services or [])],
                 poc=PoCSpec(script_type="bash", script_content="true"),  # PoC not needed for build
-                expected_outcome=ExpectedOutcome(**(record.expected_outcome or {})),
+                claimed_capability=_claimed_capability_from_record(record.claimed_capability),
             )
 
             builder = EIFBuilder(
@@ -289,7 +306,6 @@ async def start_verification(
 
             from ndai.enclave.vuln_verify.models import (
                 ConfigFile,
-                ExpectedOutcome,
                 PinnedPackage,
                 PoCSpec,
                 ServiceSpec,
@@ -304,7 +320,7 @@ async def start_verification(
                 config_files=[ConfigFile(**c) for c in (spec_record.config_files or [])],
                 services=[ServiceSpec(**s) for s in (spec_record.services or [])],
                 poc=PoCSpec(script_type="bash", script_content="true"),  # TODO: store PoC properly
-                expected_outcome=ExpectedOutcome(**(spec_record.expected_outcome or {})),
+                claimed_capability=_claimed_capability_from_record(spec_record.claimed_capability),
             )
 
             overlay_encrypted = _pending_overlays.pop(agreement_id, None)

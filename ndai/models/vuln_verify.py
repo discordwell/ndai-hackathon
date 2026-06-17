@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, LargeBinary, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -21,7 +21,10 @@ class TargetSpecRecord(Base):
     config_files: Mapped[dict | None] = mapped_column(JSONB)
     services: Mapped[dict | None] = mapped_column(JSONB)
     poc_hash: Mapped[str | None] = mapped_column(String(64))
-    expected_outcome: Mapped[dict | None] = mapped_column(JSONB)
+    # Seller's claimed-capability spec (level, reliability_runs, …). Persisted in
+    # the original "expected_outcome" JSONB column; the attribute name reflects the
+    # current ClaimedCapability model that superseded the legacy ExpectedOutcome.
+    claimed_capability: Mapped[dict | None] = mapped_column("expected_outcome", JSONB)
     status: Mapped[str] = mapped_column(String(30), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -46,11 +49,12 @@ class VerificationResultRecord(Base):
     spec_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("vuln_target_specs.id"), nullable=False)
     agreement_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("vuln_agreements.id"), nullable=False)
     buyer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    claimed_capability: Mapped[str | None] = mapped_column(String(20))  # ace, lpe, etc.
-    verified_level: Mapped[str | None] = mapped_column(String(20))
-    reliability_score: Mapped[float | None] = mapped_column(Float)
-    unpatched_result: Mapped[dict | None] = mapped_column(JSONB)  # CapabilityResult as dict
-    patched_result: Mapped[dict | None] = mapped_column(JSONB)
+    # Boolean verdicts that leave the enclave (result stripping): whether the PoC
+    # demonstrated its claimed capability on the unpatched / buyer-patched target.
+    unpatched_exit_code: Mapped[int | None] = mapped_column(Integer)
+    unpatched_matches: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    patched_exit_code: Mapped[int | None] = mapped_column(Integer)
+    patched_matches: Mapped[bool | None] = mapped_column(Boolean)
     overlap_detected: Mapped[bool | None] = mapped_column(Boolean)
     verification_chain_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     attestation_pcr0: Mapped[str | None] = mapped_column(String(200))

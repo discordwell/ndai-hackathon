@@ -90,14 +90,14 @@ def _translate_tools_to_openai(tools: list[dict[str, Any]]) -> list[dict[str, An
 
 def _translate_tool_choice_to_openai(
     tool_choice: dict[str, Any],
-) -> dict[str, Any]:
+) -> dict[str, Any] | str:
     """Translate Anthropic tool_choice to OpenAI tool_choice.
 
     Anthropic: {"type": "tool", "name": "make_disclosure"}
     OpenAI:    {"type": "function", "function": {"name": "make_disclosure"}}
 
     Anthropic: {"type": "auto"} or {"type": "any"}
-    OpenAI:    "auto" or "required"
+    OpenAI:    "auto" or "required"  (OpenAI's tool_choice is a str in these cases)
     """
     choice_type = tool_choice.get("type", "auto")
     if choice_type == "tool":

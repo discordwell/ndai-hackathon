@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel
 
+from ndai.api.schemas.known_target import CAPABILITY_LEVELS
+
 
 class PackageSpec(BaseModel):
     name: str
@@ -28,7 +30,9 @@ class PoCSpecSchema(BaseModel):
 
 
 class ClaimedCapabilitySchema(BaseModel):
-    level: str  # "crash" | "dos" | "info_leak" | "ace" | "lpe" | "callback"
+    # Constrained to the CapabilityLevel enum values so an invalid level is rejected at
+    # the API boundary (422) instead of failing later inside the enclave build/verify task.
+    level: CAPABILITY_LEVELS
     crash_signal: int | None = None  # Only for level=crash
     exit_code: int | None = None     # Only for level=crash
     reliability_runs: int = 3
@@ -66,22 +70,12 @@ class OverlayUploadRequest(BaseModel):
     encrypted_overlay: str  # base64-encoded ECIES ciphertext
 
 
-class CapabilityResultSchema(BaseModel):
-    claimed: str                          # Capability level claimed
-    verified_level: str | None = None     # Highest level confirmed
-    ace_canary_found: bool = False
-    lpe_canary_found: bool = False
-    info_canary_found: bool = False
-    callback_received: bool = False
-    crash_detected: bool = False
-    dos_detected: bool = False
-    reliability_score: float = 0.0
-    reliability_runs: int = 1
-
-
 class VerificationResultResponse(BaseModel):
-    unpatched_capability: CapabilityResultSchema
-    patched_capability: CapabilityResultSchema | None = None
+    # Boolean verdicts emitted by the verification orchestrator (VerificationOutcome):
+    # the rich CapabilityResult is reduced to pass/fail inside the enclave before it
+    # crosses the trust boundary (result stripping).
+    unpatched_matches: bool
+    patched_matches: bool | None = None
     overlap_detected: bool | None = None
     verification_chain_hash: str
     pcr0: str | None = None

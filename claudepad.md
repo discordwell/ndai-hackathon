@@ -2,6 +2,17 @@
 
 ## Session Summaries
 
+### 2026-06-17 — Fix: vuln-verify API broken by half-finished model refactor
+- **Root cause**: The sealed-0day-verification subsystem (one of the 5 headline apps) had a half-finished rename. The `VerificationResultRecord` ORM model (`ndai/models/vuln_verify.py`) had drifted to capability-style columns (`unpatched_result`/`verified_level`/`reliability_score`) that **never existed in its migration** (`e5f6a7b8c9d0`, which created boolean `unpatched_matches`/`patched_matches`/`*_exit_code`). So the model couldn't write to its own table. The router (`ndai/api/routers/vuln_verify.py`) also read `request.expected_outcome` (schema field is `claimed_capability`), constructed `TargetSpec` without the now-required `claimed_capability`, and built `VerificationResultResponse` from removed capability fields. **Every endpoint (create/build/verify/result) crashed.** Undetected because there were zero HTTP-level tests.
+- **Fix** (aligned everything on the boolean `*_matches` model the orchestrator + `nitro_verifier` already use):
+  - Realigned `VerificationResultRecord` to match its migration exactly (booleans + exit codes).
+  - Renamed `TargetSpecRecord.expected_outcome` → `claimed_capability` attr, mapped to the existing `expected_outcome` JSONB column (no migration needed).
+  - `VerificationResultResponse` now uses `unpatched_matches`/`patched_matches`; removed dead `CapabilityResultSchema`.
+  - Router: added `_claimed_capability_from_record` helper (rehydrates `ClaimedCapability`, str→enum); fixed create/build/verify paths.
+  - **Hardening**: constrained `ClaimedCapabilitySchema.level` to the existing `CAPABILITY_LEVELS` Literal so a bad level is rejected at the API boundary (422) instead of failing later in the enclave task.
+  - Minor: widened `_translate_tool_choice_to_openai` return type to `dict | str` (it genuinely returns str for auto/required).
+- **Verification**: New `tests/unit/test_vuln_verify_router.py` (12 tests: contract + HTTP-level via TestClient). Full unit suite 800→**812 passing**, no regressions. mypy 554→545. Systemic check: confirmed **no other model** has migration-vs-ORM column drift. Independently reviewed by 2 sub-agents — no correctness bugs found.
+
 ### 2026-03-22T~24:00Z — NDAI Negotiation System Polish (Production + Presentation Ready)
 - **Phase 1 — Live Negotiation Experience + Brand**: Rich SSE progress events (session.py emits meaningful data payloads at each phase: seller disclosure, buyer evaluation, Nash resolution, multi-round offers). Frontend hook parses SSE data into progressLog array. NegotiationProgress component shows live message log with fade-in animations and phase-colored icons. Login page redesigned: SVG shield logo, "Arrow's Paradox, Solved." tagline, gradient bg. FeatureNav + Sidebar: logo, icons for nav items, user display name. Tailwind animations added (fadeSlideUp, fadeIn, scaleIn).
 - **Phase 2 — Dashboard Richness + Invention Management**: Both dashboards (53 LOC each → ~120 LOC) now have: recent activity feeds (last 5 agreements with StatusBadge + relative timestamps), onboarding cards (3-step guide when empty), contextual KPI subtitles, pending actions section (buyer). Invention detail page: full read-only view of all fields, value parameter bars, novelty claims, edit/withdraw actions. Backend: PUT/DELETE endpoints for inventions, expanded InventionResponse (5 → 16 fields). Marketplace: search input, category filter chips, development stage filters, stage dots on ListingCard. API client: added put/del methods.
