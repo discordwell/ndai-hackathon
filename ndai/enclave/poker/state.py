@@ -77,6 +77,11 @@ class PlayerSeat:
     is_sitting_out: bool = False
     current_bet: int = 0
     has_acted: bool = False
+    # Highest bet level this seat has *voluntarily* acted on this round (-1 = not yet;
+    # forced blind posts do NOT count). Compared against HandState.reopen_bet to decide
+    # whether the seat may raise: a sub-minimum all-in must not reopen betting to players
+    # who have already acted.
+    acted_at_bet: int = -1
     total_bet_this_hand: int = 0  # total put in across all rounds
 
     def to_dict(self) -> dict[str, Any]:
@@ -108,6 +113,11 @@ class HandState:
     min_raise: int = 0
     last_raise_size: int = 0
     current_bet: int = 0  # highest bet this round
+    # Bet level (current_bet value) established by the last *full* bet/raise this round.
+    # A seat may make a voluntary raise only if it acted below this level (or not at all):
+    # i.e. a full-sized raise has occurred since the seat last acted. A sub-minimum all-in
+    # leaves this unchanged, so it does not reopen betting to already-acted players.
+    reopen_bet: int = 0
     hand_over: bool = False
 
     def active_players(self, seats: list[PlayerSeat | None]) -> list[PlayerSeat]:

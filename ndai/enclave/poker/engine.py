@@ -87,6 +87,7 @@ def start_hand(table: TableState) -> tuple[list[dict], dict[str, list[Card]]]:
             seat.hole_cards = []
             seat.current_bet = 0
             seat.has_acted = False
+            seat.acted_at_bet = -1
             seat.total_bet_this_hand = 0
 
     events: list[dict] = []
@@ -112,6 +113,9 @@ def start_hand(table: TableState) -> tuple[list[dict], dict[str, list[Card]]]:
     hand.current_bet = table.big_blind
     hand.min_raise = table.big_blind
     hand.last_raise_size = table.big_blind
+    # The big blind is the reference "full bet"; blind posts above don't count as having
+    # acted (acted_at_bet stays -1), so the big blind keeps its option to raise.
+    hand.reopen_bet = table.big_blind
 
     # Deal hole cards
     player_hands: dict[str, list[Card]] = {}
@@ -176,6 +180,18 @@ def _skip_all_in_players(table: TableState) -> None:
 # Player actions
 # ---------------------------------------------------------------------------
 
+def _betting_reopened(hand: HandState, seat: PlayerSeat) -> bool:
+    """Whether `seat` may currently make a voluntary raise.
+
+    Betting is reopened to a seat only if a full-sized bet/raise has occurred since it
+    last acted this round (or it has not acted yet — acted_at_bet == -1). A sub-minimum
+    all-in does not advance ``hand.reopen_bet``, so it does not reopen betting to a seat
+    that already acted; such a seat may only call or fold. This is both advertised by
+    ``get_valid_actions`` and enforced by the raise/all-in handlers.
+    """
+    return seat.acted_at_bet < hand.reopen_bet
+
+
 def get_valid_actions(table: TableState, seat_idx: int) -> list[dict[str, Any]]:
     """Return valid actions for the given seat."""
     hand = table.hand
@@ -189,13 +205,18 @@ def get_valid_actions(table: TableState, seat_idx: int) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = []
     to_call = hand.current_bet - seat.current_bet
 
+    # Whether the seat may *open or raise* with chips behind (see _betting_reopened).
+    # A sub-minimum all-in does not reopen betting, so an already-acted seat facing one
+    # may only call or fold — not raise.
+    can_reopen = _betting_reopened(hand, seat)
+
     # Fold is always available
     actions.append({"action": "fold"})
 
     if to_call <= 0:
-        # No bet to call — can check or bet
+        # No bet to call — can check, and may open a bet only if betting is reopened
         actions.append({"action": "check"})
-        if seat.stack > 0:
+        if seat.stack > 0 and can_reopen:
             min_bet = table.big_blind
             if seat.stack <= min_bet:
                 actions.append({"action": "all_in", "amount": seat.stack})
@@ -205,21 +226,23 @@ def get_valid_actions(table: TableState, seat_idx: int) -> list[dict[str, Any]]:
     else:
         # There's a bet to call
         if seat.stack <= to_call:
-            # Can only call all-in
+            # Can only call all-in (an all-in call is always allowed)
             actions.append({"action": "all_in", "amount": seat.stack})
         else:
             actions.append({"action": "call", "amount": to_call})
-            min_raise_total = hand.current_bet + hand.min_raise
-            raise_cost = min_raise_total - seat.current_bet
-            if seat.stack <= raise_cost:
-                actions.append({"action": "all_in", "amount": seat.stack})
-            else:
-                actions.append({
-                    "action": "raise",
-                    "min": raise_cost,
-                    "max": seat.stack,
-                })
-                actions.append({"action": "all_in", "amount": seat.stack})
+            if can_reopen:
+                min_raise_total = hand.current_bet + hand.min_raise
+                raise_cost = min_raise_total - seat.current_bet
+                if seat.stack <= raise_cost:
+                    actions.append({"action": "all_in", "amount": seat.stack})
+                else:
+                    actions.append({
+                        "action": "raise",
+                        "min": raise_cost,
+                        "max": seat.stack,
+                    })
+                    actions.append({"action": "all_in", "amount": seat.stack})
+            # else: betting not reopened — call or fold only (no raise, no all-in shove)
 
     return actions
 
@@ -272,6 +295,7 @@ def _do_check(table: TableState, seat: PlayerSeat) -> list[dict]:
     if hand.current_bet > seat.current_bet:
         raise PokerEngineError("Cannot check when there is a bet to call")
     seat.has_acted = True
+    seat.acted_at_bet = hand.current_bet
     return [_event("player_action", seat=seat.seat_index, action="check", amount=0)]
 
 
@@ -286,6 +310,7 @@ def _do_call(table: TableState, seat: PlayerSeat) -> list[dict]:
     seat.current_bet += actual
     seat.total_bet_this_hand += actual
     seat.has_acted = True
+    seat.acted_at_bet = hand.current_bet
     return [_event("player_action", seat=seat.seat_index, action="call", amount=actual)]
 
 
@@ -300,6 +325,12 @@ def _do_raise(table: TableState, seat: PlayerSeat, amount: int) -> list[dict]:
     if additional > seat.stack:
         raise PokerEngineError("Insufficient stack for raise")
 
+    # A bet/raise always increases the wager; it is only legal if betting is reopened to
+    # this seat. Enforce here (not just in get_valid_actions) so the enclave authoritatively
+    # rejects an illegal raise off a sub-minimum all-in.
+    if not _betting_reopened(hand, seat):
+        raise PokerEngineError("Betting not reopened — you may only call or fold")
+
     new_total_bet = seat.current_bet + additional
 
     # Validate minimum raise
@@ -311,17 +342,26 @@ def _do_raise(table: TableState, seat: PlayerSeat, amount: int) -> list[dict]:
         )
 
     raise_size = new_total_bet - hand.current_bet
+    # A full-sized raise (>= the current minimum raise) reopens betting. A short all-in
+    # raise (only reachable via the all-in path above) does not. Evaluate before mutating
+    # min_raise.
+    is_full_raise = raise_size >= hand.min_raise
     if raise_size > hand.last_raise_size:
         hand.min_raise = raise_size
     hand.last_raise_size = raise_size
     hand.current_bet = new_total_bet
+    if is_full_raise:
+        hand.reopen_bet = new_total_bet
 
     seat.stack -= additional
     seat.current_bet = new_total_bet
     seat.total_bet_this_hand += additional
     seat.has_acted = True
+    seat.acted_at_bet = new_total_bet
 
-    # Reset has_acted for other active players (they need to respond to the raise)
+    # Reset has_acted for other active players (they need to respond to the raise).
+    # They may only *raise* back if this was a full raise — get_valid_actions gates that
+    # on hand.reopen_bet, so a short all-in lets them call/fold but not re-raise.
     for s in table.seats:
         if s is not None and s is not seat and s.is_active and s.stack > 0:
             s.has_acted = False
@@ -338,12 +378,23 @@ def _do_all_in(table: TableState, seat: PlayerSeat) -> list[dict]:
     new_total_bet = seat.current_bet + amount
 
     if new_total_bet > hand.current_bet:
+        # This all-in raises the wager. It is only legal if betting is reopened to the
+        # seat; otherwise the seat is limited to a call/fold and may not shove over a
+        # sub-minimum all-in. (An all-in that only calls or under-calls is always legal.)
+        if not _betting_reopened(hand, seat):
+            raise PokerEngineError("Betting not reopened — you may only call or fold")
         raise_size = new_total_bet - hand.current_bet
-        if raise_size >= hand.min_raise:
+        # Only a full-sized all-in raise reopens betting to players who already acted.
+        is_full_raise = raise_size >= hand.min_raise
+        if is_full_raise:
             hand.min_raise = raise_size
         hand.last_raise_size = raise_size
         hand.current_bet = new_total_bet
-        # Reset has_acted for others
+        if is_full_raise:
+            hand.reopen_bet = new_total_bet
+        # Reset has_acted for others so they must respond to the higher bet. A short
+        # all-in leaves reopen_bet unchanged, so get_valid_actions only lets them
+        # call/fold — they cannot re-raise off a sub-minimum all-in.
         for s in table.seats:
             if s is not None and s is not seat and s.is_active and s.stack > 0:
                 s.has_acted = False
@@ -352,6 +403,7 @@ def _do_all_in(table: TableState, seat: PlayerSeat) -> list[dict]:
     seat.current_bet = new_total_bet
     seat.total_bet_this_hand += amount
     seat.has_acted = True
+    seat.acted_at_bet = new_total_bet
 
     return [_event("player_action", seat=seat.seat_index, action="all_in", amount=amount)]
 
@@ -438,9 +490,12 @@ def _advance_phase(table: TableState) -> list[dict]:
         if s is not None:
             s.current_bet = 0
             s.has_acted = False
+            s.acted_at_bet = -1
     hand.current_bet = 0
     hand.min_raise = table.big_blind
     hand.last_raise_size = 0
+    # No bet yet this round: the first voluntary bettor (acted_at_bet -1) may open.
+    hand.reopen_bet = 0
 
     if hand.phase == HandPhase.PREFLOP:
         hand.phase = HandPhase.FLOP
