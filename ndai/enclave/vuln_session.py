@@ -197,10 +197,7 @@ class VulnNegotiationSession:
                 )
                 self.transcript.messages.append(seller_response)
 
-                if seller_response.raw_response:
-                    action = seller_response.raw_response.get("input", {}).get("action", "accept")
-                else:
-                    action = "accept"
+                action = self._seller_action(seller_response)
 
                 logger.info("Round %d: Seller action=%s", round_num, action)
 
@@ -250,6 +247,26 @@ class VulnNegotiationSession:
         self.transcript.result = result
         logger.info("Negotiation complete: %s in %d rounds", result.outcome.value, rounds_completed)
         return result
+
+    @staticmethod
+    def _seller_action(seller_response: AgentMessage) -> str:
+        """Derive the seller's action (accept/counter/reject) from its message.
+
+        The LLM path records the chosen action in ``raw_response``. The hard-floor
+        guard in ``VulnSellerAgent.evaluate_offer`` short-circuits below-floor offers
+        WITHOUT calling the LLM: it returns a counter-at-floor message with
+        ``raw_response=None`` and a ``price_proposal`` at the acceptance floor.
+        That must be read as a counter — never an accept — otherwise a below-floor
+        price would be silently accepted as the final deal price, violating the
+        seller's documented acceptance threshold (P >= alpha_0 * omega_hat).
+
+        Mirrors ``NegotiationSession._seller_action`` in ``session.py``.
+        """
+        if seller_response.raw_response:
+            return str(seller_response.raw_response.get("input", {}).get("action", "accept"))
+        if seller_response.price_proposal is not None:
+            return "counter"
+        return "accept"
 
     def _extract_disclosure(self, msg: AgentMessage) -> VulnDisclosure | None:
         """Extract VulnDisclosure from agent message raw_response."""

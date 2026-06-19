@@ -146,6 +146,29 @@ class TestCOSESignatureVerification:
         assert result.valid is False
         assert "Nonce mismatch" in result.error
 
+    def test_nonce_type_confusion_fails_closed(self):
+        """A non-bytes/non-str nonce in the payload must NOT bypass the check.
+
+        Regression: the Nitro nonce check previously only handled bytes and str,
+        silently skipping validation for any other CBOR type (int, list, ...).
+        An attacker-shaped payload could therefore defeat freshness/replay
+        protection by sending a nonce of an unexpected type.
+        """
+        stub = NSMStub(eif_path="test.eif")
+        nonce = os.urandom(32)
+        doc = stub.get_attestation(nonce=nonce)
+
+        # Tamper the payload nonce to a non-bytes/non-str CBOR type.
+        cose_array = cbor2.loads(doc).value
+        payload = cbor2.loads(cose_array[2])
+        payload["nonce"] = 12345  # int — neither bytes nor hex str
+        cose_array[2] = cbor2.dumps(payload)
+        tampered_doc = cbor2.dumps(cbor2.CBORTag(18, cose_array))
+
+        result = verify_attestation(tampered_doc, nonce=nonce, skip_signature_check=True)
+        assert result.valid is False
+        assert "Nonce mismatch" in result.error
+
     def test_stub_attestation_pcr_check(self):
         """PCR mismatch should be detected."""
         stub = NSMStub(eif_path="test.eif")

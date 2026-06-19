@@ -219,27 +219,25 @@ def _verify_nitro_cbor(
                     enclave_public_key=enclave_public_key,
                     error="Nonce expected but not present in attestation document",
                 )
-            # Nonce may be bytes or hex string
+            # Nonce may be raw bytes or a hex string. Any other CBOR type
+            # (int, list, bool, ...) must fail closed — never skip the check,
+            # otherwise an attacker-shaped payload bypasses freshness/replay
+            # protection by sending a non-bytes/non-str nonce.
             if isinstance(doc_nonce, bytes):
-                if doc_nonce != nonce:
-                    return AttestationResult(
-                        valid=False,
-                        pcrs=pcrs,
-                        enclave_cid=None,
-                        timestamp=timestamp,
-                        enclave_public_key=enclave_public_key,
-                        error="Nonce mismatch",
-                    )
+                nonce_matches = doc_nonce == nonce
             elif isinstance(doc_nonce, str):
-                if doc_nonce != nonce.hex():
-                    return AttestationResult(
-                        valid=False,
-                        pcrs=pcrs,
-                        enclave_cid=None,
-                        timestamp=timestamp,
-                        enclave_public_key=enclave_public_key,
-                        error="Nonce mismatch",
-                    )
+                nonce_matches = doc_nonce == nonce.hex()
+            else:
+                nonce_matches = False
+            if not nonce_matches:
+                return AttestationResult(
+                    valid=False,
+                    pcrs=pcrs,
+                    enclave_cid=None,
+                    timestamp=timestamp,
+                    enclave_public_key=enclave_public_key,
+                    error="Nonce mismatch",
+                )
 
         # --- Timestamp freshness check ---
         if timestamp is not None and max_age_sec > 0:
