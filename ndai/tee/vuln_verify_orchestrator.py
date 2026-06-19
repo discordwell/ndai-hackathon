@@ -18,7 +18,8 @@ from dataclasses import dataclass
 
 from ndai.config import Settings
 from ndai.config import settings as default_settings
-from ndai.enclave.vuln_verify.models import TargetSpec
+from ndai.enclave.vuln_verify.models import CapabilityLevel, TargetSpec
+from ndai.enclave.vuln_verify.protocol import capability_meets_claim
 from ndai.tee.attestation import verify_attestation
 from ndai.tee.provider import EnclaveConfig, EnclaveIdentity, TEEError, TEEProvider, TEEType
 
@@ -27,6 +28,21 @@ logger = logging.getLogger(__name__)
 
 class VerificationOrchestrationError(TEEError):
     """Error during verification orchestration."""
+
+
+def _level_from_value(value: object) -> CapabilityLevel | None:
+    """Convert an enclave-returned capability string to an enum (fail-closed).
+
+    An unrecognized or empty value yields ``None`` so the verdict treats it as
+    "nothing verified" rather than crediting an unknown capability.
+    """
+    if not value:
+        return None
+    try:
+        return CapabilityLevel(value)
+    except ValueError:
+        logger.warning("Unknown capability level from enclave: %r", value)
+        return None
 
 
 @dataclass
@@ -116,9 +132,18 @@ class VulnVerifyOrchestrator:
             )
 
             elapsed = time.monotonic() - start_time
-            unpatched_ok = result.unpatched_capability.verified_level is not None
+            # The verdict must reflect whether the CLAIMED capability was met,
+            # not merely whether *some* capability was verified — otherwise a PoC
+            # that claims LPE but only crashes the target would "pass".
+            unpatched_ok = capability_meets_claim(
+                result.unpatched_capability.verified_level,
+                result.unpatched_capability.claimed,
+            )
             patched_ok = (
-                result.patched_capability.verified_level is not None
+                capability_meets_claim(
+                    result.patched_capability.verified_level,
+                    result.patched_capability.claimed,
+                )
                 if result.patched_capability else None
             )
             logger.info(
@@ -230,12 +255,22 @@ class VulnVerifyOrchestrator:
                 )
 
             r = result_resp["result"]
-            # The enclave returns unpatched_capability/patched_capability dicts
+            # The enclave returns unpatched_capability/patched_capability dicts.
+            # The verdict must reflect whether the CLAIMED capability was met, so
+            # compare the verified level against the claim (not "is not None").
+            claimed_level = config.target_spec.claimed_capability.level
             unpatched = r.get("unpatched_capability", {})
             patched = r.get("patched_capability")
             return VerificationOutcome(
-                unpatched_matches=unpatched.get("verified_level") is not None,
-                patched_matches=patched.get("verified_level") is not None if patched else None,
+                unpatched_matches=capability_meets_claim(
+                    _level_from_value(unpatched.get("verified_level")), claimed_level
+                ),
+                patched_matches=(
+                    capability_meets_claim(
+                        _level_from_value(patched.get("verified_level")), claimed_level
+                    )
+                    if patched else None
+                ),
                 overlap_detected=r.get("overlap_detected"),
                 verification_chain_hash=r.get("verification_chain_hash", ""),
                 pcr0=identity.pcr0 or "nitro",

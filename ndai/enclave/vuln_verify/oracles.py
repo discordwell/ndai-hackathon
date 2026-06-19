@@ -90,18 +90,31 @@ class OracleManager:
             self._callback.port > 0,
         )
 
-    def check_result(self, poc_result: PoCResult, claimed: CapabilityLevel) -> CapabilityResult:
+    def check_result(
+        self,
+        poc_result: PoCResult,
+        claimed: CapabilityLevel,
+        target_unresponsive: bool = False,
+    ) -> CapabilityResult:
         """Check which capability oracles were satisfied by the PoC result.
 
         Returns a CapabilityResult with the highest verified level and
         individual oracle outcomes.
+
+        ``target_unresponsive`` is the DoS oracle: the caller observes whether
+        the *target* services still answer their health checks after the PoC.
+        It must NOT be derived from ``poc_result.timed_out`` — a PoC timing out
+        only means the PoC itself ran long (e.g. ``sleep 9999``); it is no
+        evidence that the target was knocked offline. ``poc_result.signal`` is
+        likewise only set when the PoC process died from a genuine signal, never
+        from the enclave's own timeout SIGKILL (see PoCExecutor.execute_poc).
         """
         ace_found = self._check_canary("ace", poc_result)
         lpe_found = self._check_canary("lpe", poc_result)
         info_found = self._check_canary("info", poc_result)
         callback_ok = self._check_callback()
         crash = poc_result.signal is not None
-        dos = poc_result.timed_out
+        dos = target_unresponsive
 
         # Determine highest verified level
         verified = None

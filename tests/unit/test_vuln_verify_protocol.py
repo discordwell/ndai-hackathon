@@ -274,3 +274,62 @@ class TestVerificationChain:
         protocol.run()
 
         executor.stop_services.assert_called()
+
+
+class TestDoSOracleWiring:
+    """The DoS oracle must observe the TARGET (post-PoC health), not the PoC."""
+
+    def test_target_down_after_poc_flags_dos(self):
+        poc_result = PoCResult(0, "", "", None, False, 0.3)
+        executor = _mock_executor(poc_result)
+        # Healthy BEFORE the PoC, knocked offline AFTER.
+        executor.check_services_healthy.side_effect = [True, False]
+        oracle = _mock_oracle(dos=True)
+
+        protocol = VulnVerificationProtocol(
+            spec=_make_spec(CapabilityLevel.DOS),
+            executor=executor,
+            oracle=oracle,
+        )
+        result = protocol.run()
+
+        # The protocol observed the target and forwarded target_unresponsive=True.
+        _, kwargs = oracle.check_result.call_args
+        assert kwargs.get("target_unresponsive") is True
+        assert result.unpatched_capability.verified_level == CapabilityLevel.DOS
+
+    def test_poc_timeout_with_healthy_target_is_not_dos(self):
+        # PoC timed out, but the target still answers its health check.
+        poc_result = PoCResult(137, "", "", None, True, 120.0)
+        executor = _mock_executor(poc_result)
+        executor.check_services_healthy.return_value = True  # healthy before AND after
+        oracle = _mock_oracle()  # nothing detected
+
+        protocol = VulnVerificationProtocol(
+            spec=_make_spec(CapabilityLevel.DOS),
+            executor=executor,
+            oracle=oracle,
+        )
+        result = protocol.run()
+
+        _, kwargs = oracle.check_result.call_args
+        assert kwargs.get("target_unresponsive") is False
+        assert result.unpatched_capability.verified_level is None
+
+    def test_target_never_healthy_is_not_dos(self):
+        # A target that never came up cannot be "taken down" by the PoC.
+        poc_result = PoCResult(0, "", "", None, False, 0.3)
+        executor = _mock_executor(poc_result)
+        executor.check_services_healthy.return_value = False  # down before the PoC
+        oracle = _mock_oracle()
+
+        protocol = VulnVerificationProtocol(
+            spec=_make_spec(CapabilityLevel.DOS),
+            executor=executor,
+            oracle=oracle,
+        )
+        result = protocol.run()
+
+        _, kwargs = oracle.check_result.call_args
+        assert kwargs.get("target_unresponsive") is False
+        assert result.unpatched_capability.verified_level is None

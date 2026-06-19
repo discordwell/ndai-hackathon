@@ -179,9 +179,29 @@ class VulnVerificationProtocol:
                 self._executor.stop_services(self._spec.services)
                 self._executor.start_services(self._spec.services)
 
+            # Confirm the target is actually up *before* the PoC, so a service
+            # that simply never started is not later mistaken for a PoC-induced
+            # denial of service.
+            target_healthy_before = bool(self._spec.services) and (
+                self._executor.check_services_healthy(self._spec.services)
+            )
+
             logger.info("%s run %d/%d", phase, i + 1, runs)
             poc_result = self._executor.execute_poc(self._spec.poc)
-            cap_result = self._oracle.check_result(poc_result, claimed)
+
+            # DoS oracle: credit a denial of service only if a target that WAS
+            # answering its health check stops answering after the PoC ran. A PoC
+            # merely *timing out* is NOT a DoS — that only means the PoC itself
+            # was slow. We must observe the target, not the PoC.
+            target_unresponsive = False
+            if target_healthy_before:
+                target_unresponsive = not self._executor.check_services_healthy(
+                    self._spec.services
+                )
+
+            cap_result = self._oracle.check_result(
+                poc_result, claimed, target_unresponsive=target_unresponsive
+            )
 
             if cap_result.verified_level is not None:
                 successes += 1
@@ -224,3 +244,23 @@ _CAP_RANKS = {
 
 def _cap_rank(result: CapabilityResult) -> int:
     return _CAP_RANKS.get(result.verified_level, 0)
+
+
+def capability_meets_claim(
+    verified: CapabilityLevel | None, claimed: CapabilityLevel
+) -> bool:
+    """Whether an enclave-verified capability actually satisfies the seller's claim.
+
+    The verdict that leaves the enclave (verification passed / failed) must answer
+    "did the exploit do what the seller *claimed*?" — not merely "did it do
+    *anything*?". A PoC that claims LPE but only crashes the target has NOT met its
+    claim, even though a capability (CRASH) was verified.
+
+    A verified level satisfies the claim when it ranks at least as high as the
+    claimed level under the project's capability ordering (``_CAP_RANKS``): a
+    stronger capability implies the weaker claim. ``None`` (nothing verified)
+    never satisfies any claim.
+    """
+    if verified is None:
+        return False
+    return _CAP_RANKS.get(verified, 0) >= _CAP_RANKS.get(claimed, 0)

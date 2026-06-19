@@ -65,6 +65,27 @@ class PoCExecutor:
             except Exception as exc:
                 logger.warning("Failed to stop service %s: %s", svc.name, exc)
 
+    def check_services_healthy(self, services: list[ServiceSpec]) -> bool:
+        """Re-run every service's health check. True only if ALL still pass.
+
+        Used after PoC execution as the DoS oracle: a target that answered its
+        health check before the PoC but fails it afterward was knocked offline.
+        A health check that errors or times out counts as unhealthy (the target
+        is not responding).
+        """
+        for svc in services:
+            try:
+                hc = subprocess.run(
+                    svc.health_check, shell=True, timeout=10,
+                    capture_output=True, text=True,
+                )
+                if hc.returncode != 0:
+                    return False
+            except Exception as exc:
+                logger.info("Health check for %s did not respond: %s", svc.name, exc)
+                return False
+        return True
+
     def execute_poc(self, poc: PoCSpec) -> PoCResult:
         """Run the PoC script with resource limits and capture output.
 
@@ -111,10 +132,16 @@ class PoCExecutor:
             duration = time.monotonic() - start_time
             exit_code = proc.returncode
 
-            # Check if killed by signal (negative return code on Unix)
+            # Check if killed by signal (negative return code on Unix).
+            # On timeout WE sent SIGKILL — that is the enclave's own action, not
+            # a crash the PoC achieved, so the negative code here is ours. Only
+            # surface `signal` for genuine (non-timeout) signal deaths; otherwise
+            # the crash oracle would credit every slow/hung PoC with a CRASH.
             if exit_code < 0:
-                sig = -exit_code
-                exit_code = 128 + sig  # Convention: 128 + signal
+                killing_signal = -exit_code
+                exit_code = 128 + killing_signal  # Convention: 128 + signal
+                if not timed_out:
+                    sig = killing_signal
 
             # Truncate output
             max_bytes = self._limits.max_output_bytes

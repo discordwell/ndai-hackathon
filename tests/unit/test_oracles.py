@@ -144,14 +144,57 @@ class TestOracleChecking:
         oracle.cleanup()
 
     def test_dos_detected(self, oracle_dir):
+        """DoS is credited when the TARGET stops responding after the PoC."""
         oracle = OracleManager(oracle_dir=oracle_dir)
         oracle.plant_oracles(CapabilityLevel.DOS, service_user="www-data")
 
         result = PoCResult(
             exit_code=0, stdout="", stderr="",
+            signal=None, timed_out=False, duration_sec=2.0,
+        )
+        cap = oracle.check_result(
+            result, CapabilityLevel.DOS, target_unresponsive=True
+        )
+        assert cap.dos_detected is True
+        assert cap.verified_level == CapabilityLevel.DOS
+        oracle.cleanup()
+
+    def test_poc_timeout_alone_is_not_dos_or_crash(self, oracle_dir):
+        """A PoC that merely hangs (timeout) proves nothing about the target.
+
+        Regression: a slow/hung PoC used to be credited with DOS (from
+        ``timed_out``) and CRASH (from the enclave's own timeout SIGKILL). With
+        the target still healthy, neither capability may be claimed.
+        """
+        oracle = OracleManager(oracle_dir=oracle_dir)
+        oracle.plant_oracles(CapabilityLevel.DOS, service_user="www-data")
+
+        # PoCExecutor now reports signal=None when it kills a timed-out PoC.
+        result = PoCResult(
+            exit_code=137, stdout="", stderr="",
             signal=None, timed_out=True, duration_sec=120.0,
         )
-        cap = oracle.check_result(result, CapabilityLevel.DOS)
+        cap = oracle.check_result(
+            result, CapabilityLevel.DOS, target_unresponsive=False
+        )
+        assert cap.dos_detected is False
+        assert cap.crash_detected is False
+        assert cap.verified_level is None
+        oracle.cleanup()
+
+    def test_dos_keys_on_target_not_poc_timeout(self, oracle_dir):
+        """DoS depends on target health, independent of whether the PoC timed out."""
+        oracle = OracleManager(oracle_dir=oracle_dir)
+        oracle.plant_oracles(CapabilityLevel.DOS, service_user="www-data")
+
+        # PoC finished promptly, but the target it hit is now down.
+        result = PoCResult(
+            exit_code=0, stdout="sent malformed request", stderr="",
+            signal=None, timed_out=False, duration_sec=0.3,
+        )
+        cap = oracle.check_result(
+            result, CapabilityLevel.DOS, target_unresponsive=True
+        )
         assert cap.dos_detected is True
         assert cap.verified_level == CapabilityLevel.DOS
         oracle.cleanup()

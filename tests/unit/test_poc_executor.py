@@ -7,6 +7,7 @@ from ndai.enclave.vuln_verify.models import (
     PoCResult,
     PoCSpec,
     ResourceLimits,
+    ServiceSpec,
 )
 from ndai.enclave.vuln_verify.poc_executor import PoCExecutor
 
@@ -39,6 +40,39 @@ class TestPoCExecution:
         result = executor.execute_poc(poc)
         # Should either time out or be killed by signal
         assert result.timed_out or result.signal is not None
+
+    def test_timeout_does_not_report_crash_signal(self):
+        """A timed-out PoC must NOT carry a crash signal.
+
+        Regression: the enclave kills a slow PoC with SIGKILL; that kill is the
+        enclave's own action, not a crash the PoC achieved. Reporting signal=9
+        here made the crash oracle credit every hung PoC with a CRASH.
+        """
+        executor = PoCExecutor(ResourceLimits(max_wall_sec=2), enforce_rlimits=False)
+        poc = PoCSpec("python3", "import time; time.sleep(60)", timeout_sec=1)
+        result = executor.execute_poc(poc)
+        assert result.timed_out is True
+        assert result.signal is None
+
+    def test_check_services_healthy_all_pass(self):
+        executor = PoCExecutor(enforce_rlimits=False)
+        services = [
+            ServiceSpec("svc-a", "true", "true"),
+            ServiceSpec("svc-b", "true", "true"),
+        ]
+        assert executor.check_services_healthy(services) is True
+
+    def test_check_services_healthy_one_down(self):
+        executor = PoCExecutor(enforce_rlimits=False)
+        services = [
+            ServiceSpec("svc-up", "true", "true"),
+            ServiceSpec("svc-down", "true", "false"),  # health check fails
+        ]
+        assert executor.check_services_healthy(services) is False
+
+    def test_check_services_healthy_empty(self):
+        executor = PoCExecutor(enforce_rlimits=False)
+        assert executor.check_services_healthy([]) is True
 
     def test_python3_script(self):
         executor = PoCExecutor(enforce_rlimits=False)
